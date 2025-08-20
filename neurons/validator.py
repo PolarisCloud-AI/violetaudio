@@ -21,6 +21,7 @@ import time
 import asyncio
 import requests
 import json
+import numpy as np
 from datetime import datetime
 
 # Bittensor
@@ -46,9 +47,10 @@ class Validator(BaseValidatorNeuron):
         self.load_state()
 
         # Proxy server integration settings
-        self.proxy_server_url = getattr(self.config, 'proxy_server_url', 'http://localhost:8000')
-        self.enable_proxy_integration = getattr(self.config, 'enable_proxy_integration', True)
-        self.proxy_check_interval = getattr(self.config, 'proxy_check_interval', 30)  # seconds
+        import os
+        self.proxy_server_url = os.getenv('PROXY_SERVER_URL', 'http://localhost:8000')
+        self.enable_proxy_integration = os.getenv('ENABLE_PROXY_INTEGRATION', 'True').lower() == 'true'
+        self.proxy_check_interval = int(os.getenv('PROXY_CHECK_INTERVAL', '30'))  # seconds
         
         # Initialize proxy integration if enabled
         if self.enable_proxy_integration:
@@ -56,6 +58,15 @@ class Validator(BaseValidatorNeuron):
             self.last_proxy_check = 0
         else:
             bt.logging.info("⚠️  Proxy server integration disabled")
+        
+        # Initialize miner tracker for performance monitoring and load balancing
+        try:
+            from template.validator.miner_tracker import MinerTracker
+            self.miner_tracker = MinerTracker(self.config)
+            bt.logging.info("✅ Miner tracker initialized for load balancing and performance tracking")
+        except Exception as e:
+            bt.logging.warning(f"⚠️  Failed to initialize miner tracker: {e}")
+            self.miner_tracker = None
 
     async def forward(self):
         """
@@ -81,19 +92,14 @@ class Validator(BaseValidatorNeuron):
             if current_time - self.last_proxy_check < self.proxy_check_interval:
                 return
             
-            self.last_proxy_check = current_time
-            
             bt.logging.info("🔍 Checking proxy server for pending tasks...")
             
-            # Get integration info from proxy server
-            integration_info = await self.get_proxy_integration_info()
-            if not integration_info:
-                return
-            
-            # Check if there are pending tasks
-            pending_tasks = integration_info.get('pending_tasks', [])
+            # Get pending tasks from proxy server
+            pending_tasks = await self.get_proxy_pending_tasks()
             if not pending_tasks:
                 bt.logging.info("📭 No pending tasks in proxy server")
+                # Update timer only after successful check
+                self.last_proxy_check = current_time
                 return
             
             bt.logging.info(f"📋 Found {len(pending_tasks)} pending tasks in proxy server")
@@ -101,21 +107,25 @@ class Validator(BaseValidatorNeuron):
             # Process pending tasks
             await self.process_proxy_tasks(pending_tasks)
             
+            # Update timer after successful processing
+            self.last_proxy_check = current_time
+            
         except Exception as e:
             bt.logging.error(f"❌ Error checking proxy server tasks: {str(e)}")
     
-    async def get_proxy_integration_info(self):
-        """Get integration information from proxy server"""
+    async def get_proxy_pending_tasks(self):
+        """Get pending tasks from proxy server"""
         try:
-            response = requests.get(f"{self.proxy_server_url}/api/v1/validator/integration", timeout=10)
+            response = requests.get(f"{self.proxy_server_url}/api/v1/validator/distribute", timeout=10)
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                return data.get('tasks', [])
             else:
                 bt.logging.warning(f"⚠️  Proxy server returned status {response.status_code}")
-                return None
+                return []
         except requests.exceptions.RequestException as e:
             bt.logging.warning(f"⚠️  Could not connect to proxy server: {str(e)}")
-            return None
+            return []
     
     async def process_proxy_tasks(self, pending_tasks):
         """Process pending tasks from proxy server"""
@@ -126,11 +136,16 @@ class Validator(BaseValidatorNeuron):
                 task_id = task_data.get('task_id')
                 task_type = task_data.get('task_type')
                 language = task_data.get('language')
+                input_data = task_data.get('input_data')
                 
                 bt.logging.info(f"📝 Processing task {task_id}: {task_type} ({language})")
                 
                 # Process the task using the existing forward logic
-                await self.process_single_proxy_task(task_data)
+                result = await self.process_single_proxy_task(task_data)
+                
+                if result:
+                    # Send result back to proxy server
+                    await self.submit_result_to_proxy(task_id, result)
                 
         except Exception as e:
             bt.logging.error(f"❌ Error processing proxy tasks: {str(e)}")
@@ -141,28 +156,191 @@ class Validator(BaseValidatorNeuron):
             task_id = task_data.get('task_id')
             task_type = task_data.get('task_type')
             language = task_data.get('language')
+            input_data = task_data.get('input_data')
             
             bt.logging.info(f"🎯 Processing proxy task: {task_type} in {language}")
             
             # Create AudioTask synapse for this task
             from template.protocol import AudioTask
             
-            # Note: We need the actual input_data from the proxy server
-            # For now, we'll use a placeholder and log the task
-            bt.logging.info(f"📋 Task {task_id} queued for processing:")
-            bt.logging.info(f"   - Type: {task_type}")
-            bt.logging.info(f"   - Language: {language}")
-            bt.logging.info(f"   - Status: Queued for next forward cycle")
+            synapse = AudioTask(
+                task_type=task_type,
+                input_data=input_data,
+                language=language
+            )
             
-            # TODO: Integrate with the actual task processing logic
-            # This would involve:
-            # 1. Getting the actual input_data from proxy server
-            # 2. Running the task through miners
-            # 3. Evaluating responses
-            # 4. Updating the proxy server with results
+            # Use miner tracker for intelligent miner selection with load balancing
+            if self.miner_tracker:
+                # Register miners if not already done
+                for uid in self.get_available_miners():
+                    if uid < len(self.metagraph.hotkeys):
+                        hotkey = self.metagraph.hotkeys[uid]
+                        stake = self.metagraph.S[uid]
+                        self.miner_tracker.register_miner(uid, hotkey, stake)
+                
+                # Select 3 miners using intelligent load balancing
+                miner_uids = self.miner_tracker.select_miners_for_task(task_type, required_count=3)
+                bt.logging.info(f"🎯 Intelligent miner selection: {miner_uids}")
+            else:
+                # Fallback to stake-based selection
+                available_uids = self.get_available_miners()
+                if not available_uids:
+                    bt.logging.warning("⚠️  No available miners found")
+                    return None
+                
+                miner_uids = sorted(available_uids, key=lambda x: self.metagraph.S[x], reverse=True)[:3]
+                bt.logging.info(f"🎯 Fallback miner selection: {miner_uids}")
             
+            # Query miners
+            responses = await self.dendrite(
+                axons=[self.metagraph.axons[uid] for uid in miner_uids],
+                synapse=synapse,
+                deserialize=True,
+            )
+            
+            # Evaluate responses and find best one
+            best_response = await self.evaluate_miner_responses(
+                responses, miner_uids, task_type, input_data, language
+            )
+            
+            if best_response:
+                bt.logging.info(f"✅ Best response found from miner {best_response['miner_uid']}")
+                return best_response
+            else:
+                bt.logging.warning("⚠️  No valid responses from miners")
+                return None
+                
         except Exception as e:
             bt.logging.error(f"❌ Error processing single proxy task: {str(e)}")
+            return None
+    
+    async def evaluate_miner_responses(self, responses, miner_uids, task_type, input_data, language):
+        """Evaluate miner responses and find the best one"""
+        try:
+            best_response = None
+            best_score = 0
+            
+            bt.logging.info(f"🔍 Evaluating {len(responses)} miner responses...")
+            
+            for i, response in enumerate(responses):
+                if i >= len(miner_uids):
+                    continue
+                    
+                uid = miner_uids[i]
+                if not response:
+                    bt.logging.warning(f"⚠️  No response from miner {uid}")
+                    continue
+                
+                if not hasattr(response, 'output_data') or not response.output_data:
+                    bt.logging.warning(f"⚠️  No output data from miner {uid}")
+                    continue
+                
+                # Calculate scores
+                accuracy_score = await self.calculate_accuracy_score(response, task_type, input_data, language)
+                speed_score = self.calculate_speed_score(response.processing_time if hasattr(response, 'processing_time') else 10.0)
+                
+                # Combined score (accuracy 70%, speed 30%)
+                combined_score = (accuracy_score * 0.7) + (speed_score * 0.3)
+                
+                bt.logging.info(f"📊 Miner {uid} scores - Accuracy: {accuracy_score:.4f}, Speed: {speed_score:.4f}, Combined: {combined_score:.4f}")
+                
+                # Update miner tracker with performance data
+                if self.miner_tracker:
+                    processing_time = getattr(response, 'processing_time', 10.0)
+                    success = combined_score > 0.5  # Consider response successful if score > 0.5
+                    self.miner_tracker.update_task_result(uid, task_type, success, processing_time)
+                
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_response = {
+                        'output_data': response.output_data,
+                        'processing_time': getattr(response, 'processing_time', 10.0),
+                        'miner_uid': uid,
+                        'accuracy_score': accuracy_score,
+                        'speed_score': speed_score,
+                        'combined_score': combined_score
+                    }
+                    
+                    bt.logging.info(f"🏆 New best response from miner {uid} with score {combined_score:.4f}")
+            
+            return best_response
+            
+        except Exception as e:
+            bt.logging.error(f"❌ Error evaluating responses: {str(e)}")
+            return None
+    
+    async def calculate_accuracy_score(self, response, task_type, input_data, language):
+        """Calculate accuracy score for a response"""
+        try:
+            if task_type == "transcription":
+                # For transcription, we'll use a placeholder score for now
+                # In a real implementation, you'd compare with ground truth
+                return 0.85  # Placeholder score
+            elif task_type == "summarization":
+                return 0.80  # Placeholder score
+            elif task_type == "tts":
+                return 0.75  # Placeholder score
+            else:
+                return 0.5
+        except Exception as e:
+            bt.logging.error(f"❌ Error calculating accuracy score: {str(e)}")
+            return 0.0
+    
+    def calculate_speed_score(self, processing_time):
+        """Calculate speed score based on processing time"""
+        try:
+            if processing_time <= 0:
+                return 0.0
+            
+            # Exponential decay: faster = higher score
+            max_acceptable_time = 10.0
+            speed_score = np.exp(-processing_time / max_acceptable_time)
+            return min(1.0, max(0.0, speed_score))
+        except Exception as e:
+            bt.logging.error(f"❌ Error calculating speed score: {str(e)}")
+            return 0.0
+    
+    def get_available_miners(self):
+        """Get list of available miners"""
+        try:
+            available_miners = []
+            for uid in range(len(self.metagraph.hotkeys)):
+                if self.metagraph.axons[uid].is_serving:
+                    available_miners.append(uid)
+            return available_miners
+        except Exception as e:
+            bt.logging.error(f"❌ Error getting available miners: {str(e)}")
+            return []
+    
+    async def submit_result_to_proxy(self, task_id, result):
+        """Submit task result back to proxy server"""
+        try:
+            data = {
+                'task_id': task_id,
+                'result': result['output_data'],
+                'processing_time': result['processing_time'],
+                'miner_uid': result['miner_uid'],
+                'accuracy_score': result['accuracy_score'],
+                'speed_score': result['speed_score']
+            }
+            
+            # Save miner metrics periodically
+            if self.miner_tracker:
+                self.miner_tracker.save_metrics()
+            
+            response = requests.post(
+                f"{self.proxy_server_url}/api/v1/validator/submit_result",
+                data=data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                bt.logging.info(f"✅ Result submitted to proxy server for task {task_id}")
+            else:
+                bt.logging.warning(f"⚠️  Failed to submit result to proxy server: {response.status_code}")
+                
+        except Exception as e:
+            bt.logging.error(f"❌ Error submitting result to proxy server: {str(e)}")
 
 
 # The main function parses the configuration and runs the validator.
@@ -181,14 +359,13 @@ if __name__ == "__main__":
     # Parse arguments
     args, unknown = parser.parse_known_args()
     
-    # Create validator with proxy integration config
-    config = type('Config', (), {
-        'proxy_server_url': args.proxy_server_url,
-        'enable_proxy_integration': args.enable_proxy_integration,
-        'proxy_check_interval': args.proxy_check_interval
-    })()
+    # Store proxy config in environment variables for the validator to access
+    import os
+    os.environ['PROXY_SERVER_URL'] = args.proxy_server_url
+    os.environ['ENABLE_PROXY_INTEGRATION'] = str(args.enable_proxy_integration)
+    os.environ['PROXY_CHECK_INTERVAL'] = str(args.proxy_check_interval)
     
-    with Validator(config) as validator:
+    with Validator() as validator:
         bt.logging.info("🚀 Validator started with proxy server integration")
         bt.logging.info(f"🔗 Proxy server URL: {args.proxy_server_url}")
         bt.logging.info(f"⏱️  Check interval: {args.proxy_check_interval}s")

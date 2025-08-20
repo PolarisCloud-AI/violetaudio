@@ -220,6 +220,11 @@ class TaskStorage:
         with self.lock:
             return self.tasks.get(task_id)
     
+    def get_task(self, task_id: str) -> Optional[Dict]:
+        """Get complete task data"""
+        with self.lock:
+            return self.tasks.get(task_id)
+    
     def list_tasks(self, status: Optional[TaskStatus] = None, limit: int = 100) -> List[Dict]:
         """List tasks with optional status filter"""
         with self.lock:
@@ -299,16 +304,113 @@ class BittensorConfig:
 # Initialize Bittensor config
 bt_config = BittensorConfig()
 
+# Remove the background task processor that directly calls miners
+# The proxy server should only queue tasks and wait for validator results
+
+# Add endpoint for validator to submit results
+@app.post("/api/v1/validator/submit_result", response_model=Dict)
+async def submit_validator_result(
+    task_id: str = Form(...),
+    result: str = Form(...),
+    processing_time: float = Form(...),
+    miner_uid: int = Form(...),
+    accuracy_score: float = Form(...),
+    speed_score: float = Form(...)
+):
+    """Receive task results from validator"""
+    try:
+        # Update task with validator result
+        if task_storage.mark_task_completed(task_id, {
+            'output_data': result,
+            'processing_time': processing_time,
+            'miner_uid': miner_uid,
+            'accuracy_score': accuracy_score,
+            'speed_score': speed_score,
+            'completed_by_validator': True
+        }):
+            return {
+                'success': True,
+                'message': f'Result received for task {task_id}',
+                'task_id': task_id
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit result: {str(e)}")
+
+# Add endpoint to get task result
+@app.get("/api/v1/task/{task_id}/result", response_model=TaskResult)
+async def get_task_result(task_id: str):
+    """Get the result of a completed task"""
+    try:
+        task = task_storage.get_task_status(task_id) # Changed from get_task to get_task_status
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        if task['status'] != TaskStatus.COMPLETED:
+            return TaskResult(
+                task_id=task_id,
+                status=task['status'],
+                task_type=task.get('task_type', 'unknown'),
+                source_language=task.get('language', 'en'),
+                result=None,
+                processing_time=None,
+                accuracy_score=None,
+                speed_score=None,
+                error_message=None,
+                completed_at=None
+            )
+        
+        # Return completed task result
+        return TaskResult(
+            task_id=task_id,
+            status=TaskStatus.COMPLETED,
+            task_type=task.get('task_type', 'unknown'),
+            source_language=task.get('language', 'en'),
+            result={
+                'output_data': task.get('output_data'),
+                'processing_time': task.get('processing_time'),
+                'miner_uid': task.get('miner_uid'),
+                'accuracy_score': task.get('accuracy_score'),
+                'speed_score': task.get('speed_score')
+            },
+            processing_time=task.get('processing_time'),
+            accuracy_score=task.get('accuracy_score'),
+            speed_score=task.get('speed_score'),
+            error_message=task.get('error_message'),
+            completed_at=task.get('completed_at')
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get task result: {str(e)}")
+
+# Modify the startup to remove background task processor
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup"""
-    await bt_config.initialize()
-    # Start background task processor
-    asyncio.create_task(process_task_queue())
-    print("🚀 Background task processor started")
-    print("🔗 Validator integration endpoints available:")
-    print("   GET  /api/v1/validator/integration - Get network and task info")
-    print("   POST /api/v1/validator/distribute - Distribute tasks to validator")
+    """Initialize the application on startup"""
+    try:
+        # Initialize Bittensor client
+        if await bt_config.initialize():
+            print("✅ Bittensor initialized - {} total miners".format(len(bt_config.metagraph.hotkeys)))
+        else:
+            print("❌ Failed to initialize Bittensor client")
+        
+        # Remove background task processor - tasks will be processed by validator
+        # asyncio.create_task(process_task_queue())
+        
+        print("🚀 Proxy server ready - tasks will be processed by validator")
+        print("🔗 Validator integration endpoints available:")
+        print("   GET  /api/v1/validator/integration - Get network and task info")
+        print("   POST /api/v1/validator/distribute - Distribute tasks to validator")
+        print("   POST /api/v1/validator/submit_result - Submit task results from validator")
+        print("   GET  /api/v1/task/{task_id}/result - Get task result for user")
+        
+    except Exception as e:
+        print(f"❌ Error during startup: {str(e)}")
+        raise
 
 # API Endpoints
 
@@ -526,8 +628,8 @@ async def get_validator_integration_info():
                     "hotkey": bt_config.metagraph.hotkeys[uid],
                     "ip": axon.ip,
                     "port": axon.port,
-                    "external_ip": axon.external_ip,
-                    "external_port": axon.external_port,
+                    "external_ip": getattr(axon, 'external_ip', axon.ip),
+                    "external_port": getattr(axon, 'external_port', axon.port),
                     "stake": float(bt_config.metagraph.S[uid]) if len(bt_config.metagraph.S) > uid else 0.0
                 })
         
@@ -594,229 +696,6 @@ async def distribute_tasks_to_validator():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to distribute tasks: {str(e)}")
-
-# Background task processing
-async def process_task_queue():
-    """Process tasks from the queue using Bittensor network"""
-    print("🔄 Starting background task processor...")
-    
-    while True:
-        try:
-            # Get next task from queue
-            task_data = task_storage.get_next_task()
-            if not task_data:
-                await asyncio.sleep(1)  # Wait for new tasks
-                continue
-            
-            task_id = task_data['task_id']
-            print(f"🔄 Processing task {task_id}: {task_data['task_type']}")
-            
-            # Mark task as processing
-            if not task_storage.mark_task_processing(task_id):
-                continue
-            
-            # Process task through Bittensor network
-            result = await process_task_with_bittensor(task_data)
-            
-            if result['success']:
-                task_storage.mark_task_completed(task_id, result)
-            else:
-                task_storage.mark_task_failed(task_id, result['error_message'])
-                
-        except Exception as e:
-            print(f"❌ Error in task queue processing: {str(e)}")
-            await asyncio.sleep(5)  # Wait before retrying
-
-async def process_task_with_bittensor(task_data: Dict) -> Dict:
-    """Process task using Bittensor network"""
-    try:
-        # Create AudioTask synapse
-        synapse = AudioTask(
-            task_type=task_data['task_type'],
-            input_data=task_data['input_data'],
-            language=task_data['language']
-        )
-        
-        # Get available miners from metagraph
-        available_miners = []
-        for uid in range(len(bt_config.metagraph.hotkeys)):
-            if bt_config.metagraph.axons[uid].is_serving:
-                available_miners.append(uid)
-        
-        if not available_miners:
-            return {
-                'success': False,
-                'error_message': 'No available miners found'
-            }
-        
-        print(f"🎯 Found {len(available_miners)} available miners")
-        
-        # Query miners (limit to top 5 for efficiency)
-        top_miners = available_miners[:5]
-        axons = [bt_config.metagraph.axons[uid] for uid in top_miners]
-        
-        print(f"🎯 Querying {len(top_miners)} miners: {top_miners}")
-        
-        # Send request to miners
-        start_time = time.time()
-        responses = await bt_config.dendrite(
-            axons=axons,
-            synapse=synapse,
-            deserialize=False,
-            timeout=60
-        )
-        
-        total_time = time.time() - start_time
-        print(f"⏱️  Total communication time: {total_time:.2f}s")
-        
-        # Process responses and find best result
-        best_response = await _evaluate_responses(
-            responses, top_miners, task_data, total_time, synapse
-        )
-        
-        if best_response:
-            return {
-                'success': True,
-                **best_response
-            }
-        else:
-            return {
-                'success': False,
-                'error_message': 'No valid responses from miners'
-            }
-            
-    except Exception as e:
-        return {
-            'success': False,
-            'error_message': f'Bittensor processing error: {str(e)}'
-        }
-
-async def _evaluate_responses(
-    responses: List, 
-    miner_uids: List[int], 
-    task_data: Dict, 
-    total_time: float,
-    synapse: AudioTask
-) -> Optional[Dict]:
-    """Evaluate miner responses and find the best one"""
-    try:
-        best_response = None
-        best_score = 0
-        
-        print(f"🔍 Evaluating {len(responses)} miner responses...")
-        
-        for i, response in enumerate(responses):
-            if not response:
-                print(f"⚠️  No response from miner {miner_uids[i]}")
-                continue
-            
-            if not hasattr(response, 'output_data') or not response.output_data:
-                print(f"⚠️  No output data from miner {miner_uids[i]}")
-                continue
-            
-            print(f"🔍 Processing response from miner {miner_uids[i]}")
-            
-            # Extract response data
-            processing_time = getattr(response, 'processing_time', total_time)
-            model_used = getattr(response, 'pipeline_model', 'unknown')
-            error_msg = getattr(response, 'error_message', None)
-            
-            if error_msg:
-                print(f"⚠️  Miner {miner_uids[i]} reported error: {error_msg}")
-                continue
-            
-            # Run validator pipeline for comparison
-            print(f"🔬 Running validator pipeline for comparison...")
-            validator_output, validator_time, validator_model = run_validator_pipeline(
-                task_data['task_type'],
-                task_data['input_data'],
-                task_data['language']
-            )
-            
-            if not validator_output:
-                print(f"⚠️  Validator pipeline failed for miner {miner_uids[i]}")
-                continue
-            
-            # Calculate scores
-            scores = await _calculate_response_scores(
-                response, validator_output, task_data, processing_time, synapse
-            )
-            
-            if scores:
-                accuracy, speed_score, combined_score = scores
-                
-                print(f"📊 Miner {miner_uids[i]} scores - Accuracy: {accuracy:.4f}, Speed: {speed_score:.4f}, Combined: {combined_score:.4f}")
-                
-                if combined_score > best_score:
-                    best_score = combined_score
-                    best_response = {
-                        'output_data': response.output_data,
-                        'processing_time': processing_time,
-                        'pipeline_model': model_used,
-                        'accuracy_score': accuracy,
-                        'speed_score': speed_score,
-                        'combined_score': combined_score,
-                        'miner_uid': miner_uids[i],
-                        'validator_time': validator_time,
-                        'validator_model': validator_model
-                    }
-                    
-                    print(f"🏆 New best response from miner {miner_uids[i]} with score {combined_score:.4f}")
-            else:
-                print(f"⚠️  Could not calculate scores for miner {miner_uids[i]}")
-        
-        if best_response:
-            print(f"🎉 Best response selected from miner {best_response['miner_uid']} with score {best_response['combined_score']:.4f}")
-        else:
-            print("❌ No valid responses found")
-        
-        return best_response
-        
-    except Exception as e:
-        print(f"❌ Error evaluating responses: {str(e)}")
-        return None
-
-async def _calculate_response_scores(
-    response: AudioTask, 
-    validator_output: str, 
-    task_data: Dict, 
-    processing_time: float,
-    synapse: AudioTask
-) -> Optional[Tuple[float, float, float]]:
-    """Calculate accuracy and speed scores for a response"""
-    try:
-        # Decode response for comparison
-        if task_data['task_type'] == 'transcription':
-            response_text = synapse.decode_text(response.output_data)
-            expected_text = synapse.decode_text(validator_output)
-            accuracy = calculate_accuracy_score(response_text, expected_text, 'transcription')
-            
-            print(f"📝 Response: '{response_text[:100]}...'")
-            print(f"📝 Expected: '{expected_text[:100]}...'")
-            
-        elif task_data['task_type'] == 'summarization':
-            response_text = synapse.decode_text(response.output_data)
-            expected_text = synapse.decode_text(validator_output)
-            accuracy = calculate_accuracy_score(response_text, expected_text, 'summarization')
-            
-        elif task_data['task_type'] == 'tts':
-            # For TTS, we'll use a placeholder accuracy since audio comparison is complex
-            accuracy = 0.8  # Placeholder score
-            
-        else:
-            accuracy = 0.0
-        
-        # Calculate speed score
-        speed_score = calculate_speed_score(processing_time)
-        
-        # Calculate combined score (accuracy 70%, speed 30%)
-        combined_score = (accuracy * 0.7) + (speed_score * 0.3)
-        
-        return accuracy, speed_score, combined_score
-        
-    except Exception as e:
-        print(f"❌ Error calculating scores: {str(e)}")
-        return None
 
 if __name__ == "__main__":
     uvicorn.run(

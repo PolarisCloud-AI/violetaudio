@@ -117,10 +117,11 @@ def reward(
     processing_time: float,
     stake: float,
     max_stake: float,
-    max_acceptable_time: float = 10.0
+    max_acceptable_time: float = 10.0,
+    performance_history: Dict = None
 ) -> float:
     """
-    Calculate comprehensive reward for a miner response.
+    Calculate comprehensive reward for a miner response with performance history bonus.
     
     Args:
         response: Miner's response dictionary
@@ -130,6 +131,7 @@ def reward(
         stake: Miner's stake
         max_stake: Maximum stake in network
         max_acceptable_time: Maximum acceptable processing time
+        performance_history: Miner's performance history data
         
     Returns:
         Reward score between 0 and 1
@@ -160,18 +162,41 @@ def reward(
     accuracy_score = calculate_accuracy_score(response_text, expected_output, task_type)
     stake_score = calculate_stake_score(stake, max_stake)
     
-    # Weighted combination of scores
-    # Speed: 40%, Accuracy: 40%, Stake: 20%
+    # Performance history bonus (if available)
+    performance_bonus = 0.0
+    if performance_history:
+        # Success rate bonus (up to 15%)
+        success_rate = performance_history.get('success_rate', 0.5)
+        performance_bonus += success_rate * 0.15
+        
+        # Task type specialization bonus (up to 10%)
+        if task_type in performance_history.get('task_type_performance', {}):
+            task_perf = performance_history['task_type_performance'][task_type]
+            if task_perf.get('total', 0) >= 5:  # Minimum samples
+                specialization_bonus = task_perf.get('success_rate', 0.5) * 0.10
+                performance_bonus += specialization_bonus
+        
+        # Recent performance bonus (up to 5%)
+        recent_success_rate = performance_history.get('recent_success_rate', 0.5)
+        performance_bonus += recent_success_rate * 0.05
+    
+    # Weighted combination of scores with performance bonus
+    # Speed: 35%, Accuracy: 35%, Stake: 20%, Performance History: 10%
     final_score = (
-        speed_score * 0.4 +
-        accuracy_score * 0.4 +
-        stake_score * 0.2
+        speed_score * 0.35 +
+        accuracy_score * 0.35 +
+        stake_score * 0.20 +
+        performance_bonus
     )
+    
+    # Cap the final score at 1.0
+    final_score = min(1.0, final_score)
     
     bt.logging.info(
         f"Reward breakdown - Speed: {speed_score:.3f}, "
         f"Accuracy: {accuracy_score:.3f}, "
         f"Stake: {stake_score:.3f}, "
+        f"Performance Bonus: {performance_bonus:.3f}, "
         f"Final: {final_score:.3f}"
     )
     
@@ -185,10 +210,11 @@ def get_rewards(
     responses: List[Dict[str, Any]],
     expected_output: str,
     miner_uids: List[int],
-    max_acceptable_time: float = 10.0
+    max_acceptable_time: float = 10.0,
+    miner_tracker: Any = None
 ) -> np.ndarray:
     """
-    Calculate rewards for all miner responses.
+    Calculate rewards for all miner responses with performance history.
     
     Args:
         self: Validator instance
@@ -198,6 +224,7 @@ def get_rewards(
         expected_output: Expected output for the task
         miner_uids: List of miner UIDs
         max_acceptable_time: Maximum acceptable processing time
+        miner_tracker: Miner tracker instance for performance history
         
     Returns:
         Array of reward scores
@@ -213,6 +240,16 @@ def get_rewards(
         stake = float(self.metagraph.S[uid])
         processing_time = response.get("processing_time", 0.0)
         
+        # Get performance history if available
+        performance_history = None
+        if miner_tracker and hasattr(miner_tracker, 'miners') and uid in miner_tracker.miners:
+            miner = miner_tracker.miners[uid]
+            performance_history = {
+                'success_rate': miner.successful_tasks / max(miner.total_tasks, 1),
+                'recent_success_rate': miner.recent_success_rate,
+                'task_type_performance': miner.task_type_performance
+            }
+        
         # Calculate reward for this miner
         miner_reward = reward(
             response=response,
@@ -221,7 +258,8 @@ def get_rewards(
             processing_time=processing_time,
             stake=stake,
             max_stake=max_stake,
-            max_acceptable_time=max_acceptable_time
+            max_acceptable_time=max_acceptable_time,
+            performance_history=performance_history
         )
         
         rewards.append(miner_reward)

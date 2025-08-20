@@ -24,6 +24,7 @@ import numpy as np
 from template.protocol import AudioTask
 from template.validator.reward import get_rewards, run_validator_pipeline
 from template.utils.uids import get_random_uids
+from template.validator.miner_tracker import MinerTracker
 
 
 async def forward(self):
@@ -63,7 +64,7 @@ async def forward(self):
     
     if validator_output:
         # Decode validator output for comparison
-        dummy_task = AudioTask()
+        dummy_task = AudioTask(input_data="dummy", task_type=selected_task, language="en")
         if selected_task in ["transcription", "summarization"]:
             expected_output = dummy_task.decode_text(validator_output)
         else:
@@ -75,16 +76,27 @@ async def forward(self):
         bt.logging.warning(f"⚠️  Validator pipeline failed, using placeholder output")
         expected_output = placeholder_expected
     
-    # Get random miner UIDs from reachable miners only (top 5 miners based on stake)
-    available_uids = self.reachable_miners
-    miner_uids = sorted(available_uids, key=lambda x: self.metagraph.S[x], reverse=True)[:min(5, len(available_uids))]
+    # Initialize miner tracker if not exists
+    if not hasattr(self, 'miner_tracker'):
+        self.miner_tracker = MinerTracker(self.config)
+        bt.logging.info("🆕 Initialized miner tracker for load balancing")
     
-    bt.logging.info(f"🎯 SELECTED MINERS FOR QUERYING:")
+    # Register miners in the tracker
+    for uid in self.reachable_miners:
+        if uid < len(self.metagraph.hotkeys):
+            hotkey = self.metagraph.hotkeys[uid]
+            stake = self.metagraph.S[uid]
+            self.miner_tracker.register_miner(uid, hotkey, stake)
+    
+    # Use intelligent miner selection with load balancing (3 miners per task)
+    miner_uids = self.miner_tracker.select_miners_for_task(selected_task, required_count=3)
+    
+    bt.logging.info(f"🎯 INTELLIGENT MINER SELECTION WITH LOAD BALANCING:")
     bt.logging.info(f"   - Task type: {selected_task}")
     bt.logging.info(f"   - Number of miners: {len(miner_uids)}")
     bt.logging.info(f"   - Selected UIDs: {miner_uids}")
     
-    # Log details of selected miners
+    # Log details of selected miners with performance metrics
     for uid in miner_uids:
         if uid < len(self.metagraph.hotkeys):
             axon = self.metagraph.axons[uid]
@@ -97,7 +109,16 @@ async def forward(self):
             if isinstance(ip, int):
                 ip = f"{ip >> 24}.{(ip >> 16) & 255}.{(ip >> 8) & 255}.{ip & 255}"
             
+            # Get performance metrics
+            performance_score = "N/A"
+            current_load = "N/A"
+            if uid in self.miner_tracker.miners:
+                miner = self.miner_tracker.miners[uid]
+                performance_score = f"{miner.get_performance_score():.3f}"
+                current_load = f"{miner.current_load}/{miner.max_concurrent_tasks}"
+            
             bt.logging.info(f"   📡 UID {uid}: {ip}:{port} | Hotkey: {hotkey[:20]}... | Stake: {stake:,.0f} TAO")
+            bt.logging.info(f"      🎯 Performance: {performance_score} | Load: {current_load}")
     
     bt.logging.info(f"\n🚀 SENDING {selected_task.upper()} TASK TO MINERS...")
     
@@ -134,7 +155,8 @@ async def forward(self):
         query=test_data,
         responses=responses,
         expected_output=expected_output,
-        miner_uids=miner_uids
+        miner_uids=miner_uids,
+        miner_tracker=self.miner_tracker
     )
     
         # Create ranking of miners based on rewards
@@ -222,6 +244,26 @@ async def forward(self):
         # Update scores
         self.scores[uid] = final_reward
     
+    # Update miner tracker with task results for performance history
+    bt.logging.info(f"\n📊 UPDATING MINER PERFORMANCE HISTORY...")
+    for i, miner in enumerate(miner_rankings):
+        uid = miner['uid']
+        reward = miner['reward']
+        response = miner['response']
+        
+        if response:
+            processing_time = response.get('processing_time', 0.0)
+            error_msg = response.get('error_message', None)
+            success = reward > 0 and not error_msg
+            
+            # Update miner tracker
+            self.miner_tracker.update_task_result(uid, selected_task, success, processing_time)
+            
+            bt.logging.debug(f"   📈 UID {uid}: success={success}, time={processing_time:.2f}s, reward={reward:.4f}")
+    
+    # Save updated metrics
+    self.miner_tracker.save_metrics()
+    
     # Log summary
     total_reward = sum(m['reward'] for m in miner_rankings)
     avg_reward = total_reward / len(miner_rankings) if miner_rankings else 0
@@ -231,6 +273,17 @@ async def forward(self):
     bt.logging.info(f"   - Average reward: {avg_reward:.4f}")
     bt.logging.info(f"   - Top reward: {miner_rankings[0]['reward']:.4f} (UID {miner_rankings[0]['uid']})")
     bt.logging.info(f"   - Bottom reward: {miner_rankings[-1]['reward']:.4f} (UID {miner_rankings[-1]['uid']})")
+    
+    # Print miner performance summary every 10 rounds
+    if hasattr(self, 'round_count'):
+        self.round_count += 1
+    else:
+        self.round_count = 1
+    
+    if self.round_count % 10 == 0:
+        self.miner_tracker.print_miner_summary()
+        self.miner_tracker.cleanup_old_miners(max_age_hours=24)
+    
     bt.logging.info("=" * 60)
     
     # Sleep between iterations
@@ -368,7 +421,7 @@ def generate_test_data(task_type: str) -> tuple:
         audio_bytes.seek(0)
         
         # Create a dummy AudioTask instance for encoding
-        dummy_task = AudioTask()
+        dummy_task = AudioTask(input_data="dummy_audio_data")
         encoded_audio = dummy_task.encode_audio(audio_bytes.read())
         
         # Expected output (what we expect from Whisper)
@@ -379,7 +432,7 @@ def generate_test_data(task_type: str) -> tuple:
     elif task_type == "tts":
         # Generate test text for TTS
         test_text = "Hello, this is a test for text to speech conversion."
-        dummy_task = AudioTask()
+        dummy_task = AudioTask(input_data="dummy_text_data")
         encoded_text = dummy_task.encode_text(test_text)
         
         # Expected output (placeholder for audio)
@@ -390,7 +443,7 @@ def generate_test_data(task_type: str) -> tuple:
     elif task_type == "summarization":
         # Generate test text for summarization
         test_text = "This is a long text that needs to be summarized. It contains multiple sentences and should be reduced to a shorter version while preserving the key information. The summarization process should extract the key points and create a concise version of the original text."
-        dummy_task = AudioTask()
+        dummy_task = AudioTask(input_data="dummy_summary_data")
         encoded_text = dummy_task.encode_text(test_text)
         
         # Expected output (what we expect from BART)
