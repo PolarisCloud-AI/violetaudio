@@ -4,14 +4,13 @@
 # Copyright © 2023 <your name>
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# documentation files (the "Software"), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 # THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
@@ -23,146 +22,217 @@ import bittensor as bt
 
 # Bittensor Miner Template:
 import template
+from template.protocol import AudioTask
 
 # import base miner class which takes care of most of the boilerplate
 from template.base.miner import BaseMinerNeuron
 
+# Import pipelines with availability checks
+from template.pipelines import TranscriptionPipeline, TTS_AVAILABLE, SUMMARIZATION_AVAILABLE
+
+# Conditional imports for optional pipelines
+if TTS_AVAILABLE:
+    from template.pipelines import TTSPipeline
+if SUMMARIZATION_AVAILABLE:
+    from template.pipelines import SummarizationPipeline
+
 
 class Miner(BaseMinerNeuron):
     """
-    Your miner neuron class. You should use this class to define your miner's behavior. In particular, you should replace the forward function with your own logic. You may also want to override the blacklist and priority functions according to your needs.
-
-    This class inherits from the BaseMinerNeuron class, which in turn inherits from BaseNeuron. The BaseNeuron class takes care of routine tasks such as setting up wallet, subtensor, metagraph, logging directory, parsing config, etc. You can override any of the methods in BaseNeuron if you need to customize the behavior.
-
-    This class provides reasonable default behavior for a miner such as blacklisting unrecognized hotkeys, prioritizing requests based on stake, and forwarding requests to the forward function. If you need to define custom
+    Audio processing miner that handles transcription, TTS, and summarization tasks.
+    This miner provides high-speed, accurate audio processing services using state-of-the-art models.
     """
 
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
 
-        # TODO(developer): Anything specific to your use case you can do here
+        # Initialize pipelines
+        bt.logging.info("Initializing audio processing pipelines...")
+        
+        # Transcription pipeline (always available)
+        self.transcription_pipeline = TranscriptionPipeline("openai/whisper-tiny")
+        bt.logging.info("✅ Transcription pipeline initialized")
+        
+        # TTS pipeline (conditional)
+        if TTS_AVAILABLE:
+            self.tts_pipeline = TTSPipeline("tts_models/en/ljspeech/tacotron2-DDC")
+            bt.logging.info("✅ TTS pipeline initialized")
+        else:
+            self.tts_pipeline = None
+            bt.logging.warning("⚠️  TTS pipeline not available (TTS package not installed)")
+        
+        # Summarization pipeline (conditional)
+        if SUMMARIZATION_AVAILABLE:
+            self.summarization_pipeline = SummarizationPipeline("facebook/bart-large-cnn")
+            bt.logging.info("✅ Summarization pipeline initialized")
+        else:
+            self.summarization_pipeline = None
+            bt.logging.warning("⚠️  Summarization pipeline not available (transformers package not installed)")
+        
+        bt.logging.info("Audio processing pipelines initialization complete!")
 
     async def forward(
-        self, synapse: template.protocol.Dummy
-    ) -> template.protocol.Dummy:
+        self, synapse: template.protocol.AudioTask
+    ) -> template.protocol.AudioTask:
         """
-        Processes the incoming 'Dummy' synapse by performing a predefined operation on the input data.
-        This method should be replaced with actual logic relevant to the miner's purpose.
+        Process audio tasks including transcription, TTS, and summarization.
 
         Args:
-            synapse (template.protocol.Dummy): The synapse object containing the 'dummy_input' data.
+            synapse (template.protocol.AudioTask): The synapse object containing the task details.
 
         Returns:
-            template.protocol.Dummy: The synapse object with the 'dummy_output' field set to twice the 'dummy_input' value.
-
-        The 'forward' function is a placeholder and should be overridden with logic that is appropriate for
-        the miner's intended operation. This method demonstrates a basic transformation of input data.
+            template.protocol.AudioTask: The synapse object with the processed results.
         """
-        # TODO(developer): Replace with actual implementation logic.
-        synapse.dummy_output = synapse.dummy_input * 2
+        bt.logging.info("🚨 FORWARD FUNCTION CALLED! 🚨")
+        bt.logging.info(f"🎯 Processing {synapse.task_type} task...")
+        start_time = time.time()
+        
+        try:
+            # Route to appropriate pipeline based on task type
+            if synapse.task_type == "transcription":
+                if self.transcription_pipeline is None:
+                    raise Exception("Transcription pipeline not available")
+                
+                bt.logging.info("📝 Starting transcription...")
+                
+                # Decode audio data
+                audio_bytes = synapse.decode_audio(synapse.input_data)
+                bt.logging.info(f"🎵 Decoded audio data: {len(audio_bytes)} bytes")
+                
+                # Process transcription
+                transcribed_text, processing_time = self.transcription_pipeline.transcribe(
+                    audio_bytes, synapse.language
+                )
+                
+                # Encode output
+                synapse.output_data = synapse.encode_text(transcribed_text)
+                synapse.processing_time = processing_time
+                synapse.pipeline_model = self.transcription_pipeline.model_name
+                
+                bt.logging.info(f"✅ Transcription completed in {processing_time:.2f}s")
+                bt.logging.info(f"📝 Output: {transcribed_text[:100]}...")
+                
+            elif synapse.task_type == "tts":
+                if self.tts_pipeline is None:
+                    raise Exception("TTS pipeline not available")
+                
+                bt.logging.info("🎤 Starting text-to-speech...")
+                
+                # Decode text data
+                text = synapse.decode_text(synapse.input_data)
+                bt.logging.info(f"📝 Input text: {text[:100]}...")
+                
+                # Process TTS
+                audio_bytes, processing_time = self.tts_pipeline.synthesize(
+                    text, synapse.language
+                )
+                
+                # Encode output
+                synapse.output_data = synapse.encode_audio(audio_bytes)
+                synapse.processing_time = processing_time
+                synapse.pipeline_model = self.tts_pipeline.model_name
+                
+                bt.logging.info(f"✅ TTS completed in {processing_time:.2f}s")
+                bt.logging.info(f"🎵 Output audio: {len(audio_bytes)} bytes")
+                
+            elif synapse.task_type == "summarization":
+                if self.summarization_pipeline is None:
+                    raise Exception("Summarization pipeline not available")
+                
+                bt.logging.info("📋 Starting summarization...")
+                
+                # Decode text data
+                text = synapse.decode_text(synapse.input_data)
+                bt.logging.info(f"📝 Input text: {text[:100]}...")
+                
+                # Process summarization
+                summary_text, processing_time = self.summarization_pipeline.summarize(
+                    text, language=synapse.language
+                )
+                
+                # Encode output
+                synapse.output_data = synapse.encode_text(summary_text)
+                synapse.processing_time = processing_time
+                synapse.pipeline_model = self.summarization_pipeline.model_name
+                
+                bt.logging.info(f"✅ Summarization completed in {processing_time:.2f}s")
+                bt.logging.info(f"📝 Summary: {summary_text[:100]}...")
+                
+            else:
+                raise Exception(f"Unknown task type: {synapse.task_type}")
+            
+            total_time = time.time() - start_time
+            bt.logging.info(f"🎉 Task completed successfully! Total time: {total_time:.2f}s")
+            
+        except Exception as e:
+            total_time = time.time() - start_time
+            synapse.error_message = str(e)
+            synapse.processing_time = total_time
+            synapse.output_data = None
+            synapse.pipeline_model = "error"
+            
+            bt.logging.error(f"❌ Error processing {synapse.task_type} task: {str(e)}")
+            bt.logging.error(f"⏱️  Failed after {total_time:.2f}s")
+        
         return synapse
 
-    async def blacklist(
-        self, synapse: template.protocol.Dummy
+    async     def blacklist(
+        self, synapse: template.protocol.AudioTask
     ) -> typing.Tuple[bool, str]:
         """
-        Determines whether an incoming request should be blacklisted and thus ignored. Your implementation should
-        define the logic for blacklisting requests based on your needs and desired security parameters.
-
-        Blacklist runs before the synapse data has been deserialized (i.e. before synapse.data is available).
-        The synapse is instead contracted via the headers of the request. It is important to blacklist
-        requests before they are deserialized to avoid wasting resources on requests that will be ignored.
+        Determines whether an incoming request should be blacklisted.
+        Currently allows all connections for testing purposes.
 
         Args:
-            synapse (template.protocol.Dummy): A synapse object constructed from the headers of the incoming request.
+            synapse (template.protocol.AudioTask): A synapse object constructed from the headers of the incoming request.
 
         Returns:
             Tuple[bool, str]: A tuple containing a boolean indicating whether the synapse's hotkey is blacklisted,
                             and a string providing the reason for the decision.
-
-        This function is a security measure to prevent resource wastage on undesired requests. It should be enhanced
-        to include checks against the metagraph for entity registration, validator status, and sufficient stake
-        before deserialization of synapse data to minimize processing overhead.
-
-        Example blacklist logic:
-        - Reject if the hotkey is not a registered entity within the metagraph.
-        - Consider blacklisting entities that are not validators or have insufficient stake.
-
-        In practice it would be wise to blacklist requests from entities that are not validators, or do not have
-        enough stake. This can be checked via metagraph.S and metagraph.validator_permit. You can always attain
-        the uid of the sender via a metagraph.hotkeys.index( synapse.dendrite.hotkey ) call.
-
-        Otherwise, allow the request to be processed further.
         """
+        # Allow all connections for testing
+        bt.logging.info(f"Allowing request from hotkey {synapse.dendrite.hotkey if synapse.dendrite else 'Unknown'}")
+        return False, "Allowed for testing."
 
-        if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
-            return True, "Missing dendrite or hotkey"
-
-        # TODO(developer): Define how miners should blacklist requests.
-        uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
-        if (
-            not self.config.blacklist.allow_non_registered
-            and synapse.dendrite.hotkey not in self.metagraph.hotkeys
-        ):
-            # Ignore requests from un-registered entities.
-            bt.logging.trace(
-                f"Blacklisting un-registered hotkey {synapse.dendrite.hotkey}"
-            )
-            return True, "Unrecognized hotkey"
-
-        if self.config.blacklist.force_validator_permit:
-            # If the config is set to force validator permit, then we should only allow requests from validators.
-            if not self.metagraph.validator_permit[uid]:
-                bt.logging.warning(
-                    f"Blacklisting a request from non-validator hotkey {synapse.dendrite.hotkey}"
-                )
-                return True, "Non-validator hotkey"
-
-        bt.logging.trace(
-            f"Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}"
-        )
-        return False, "Hotkey recognized!"
-
-    async def priority(self, synapse: template.protocol.Dummy) -> float:
+    async def priority(
+        self, synapse: template.protocol.AudioTask
+    ) -> float:
         """
-        The priority function determines the order in which requests are handled. More valuable or higher-priority
-        requests are processed before others. You should design your own priority mechanism with care.
-
-        This implementation assigns priority to incoming requests based on the calling entity's stake in the metagraph.
+        Determines the priority of the incoming request.
+        Currently returns a default priority for testing.
 
         Args:
-            synapse (template.protocol.Dummy): The synapse object that contains metadata about the incoming request.
+            synapse (template.protocol.AudioTask): A synapse object constructed from the headers of the incoming request.
 
         Returns:
-            float: A priority score derived from the stake of the calling entity.
-
-        Miners may receive messages from multiple entities at once. This function determines which request should be
-        processed first. Higher values indicate that the request should be processed first. Lower values indicate
-        that the request should be processed later.
-
-        Example priority logic:
-        - A higher stake results in a higher priority value.
+            float: Priority score (default 1.0 for testing)
         """
-        if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
-            return 0.0
+        # Return default priority for testing
+        return 1.0
 
-        # TODO(developer): Define how miners should prioritize requests.
-        caller_uid = self.metagraph.hotkeys.index(
-            synapse.dendrite.hotkey
-        )  # Get the caller index.
-        priority = float(
-            self.metagraph.S[caller_uid]
-        )  # Return the stake as the priority.
-        bt.logging.trace(
-            f"Prioritizing {synapse.dendrite.hotkey} with value: {priority}"
-        )
-        return priority
+    async def verify(
+        self, synapse: template.protocol.AudioTask
+    ) -> typing.Tuple[bool, str]:
+        """
+        Verifies the synapse data.
+        
+        Args:
+            synapse (template.protocol.AudioTask): A synapse object containing the data to verify.
+            
+        Returns:
+            Tuple[bool, str]: A tuple containing a boolean indicating whether the synapse data is valid,
+                            and a string providing the reason for the decision.
+        """
+        if synapse.task_type not in ["transcription", "tts", "summarization"]:
+            return False, f"Invalid task type: {synapse.task_type}"
+
+        if not synapse.input_data:
+            return False, "No input data provided"
+
+        if not synapse.language:
+            return False, "No language specified"
+
+        return True, "Synapse data is valid"
 
 
 # This is the main function, which runs the miner.

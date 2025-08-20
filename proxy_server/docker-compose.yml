@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: bittensor_proxy_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  proxy-server:
+    build: .
+    container_name: bittensor_proxy_server
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BT_NETUID=49
+      - BT_NETWORK=finney
+      - BT_WALLET_NAME=luno
+      - BT_WALLET_HOTKEY=arusha
+      - LOG_LEVEL=INFO
+      - MAX_CONCURRENT_TASKS=20
+      - TASK_TIMEOUT=120
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ~/.bittensor:/home/app/.bittensor:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: bittensor_proxy_network

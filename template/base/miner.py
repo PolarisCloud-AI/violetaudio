@@ -58,6 +58,12 @@ class BaseMinerNeuron(BaseNeuron):
             wallet=self.wallet,
             config=self.config() if callable(self.config) else self.config,
         )
+        
+        # Ensure axon is properly configured for local and external access
+        bt.logging.info(f"Axon IP: {self.axon.ip}")
+        bt.logging.info(f"Axon Port: {self.axon.port}")
+        bt.logging.info(f"Axon External IP: {self.axon.external_ip}")
+        bt.logging.info(f"Axon External Port: {self.axon.external_port}")
 
         # Attach determiners which functions are called when servicing a request.
         bt.logging.info(f"Attaching forward function to miner axon.")
@@ -66,6 +72,7 @@ class BaseMinerNeuron(BaseNeuron):
             blacklist_fn=self.blacklist,
             priority_fn=self.priority,
         )
+        
         bt.logging.info(f"Axon created: {self.axon}")
 
         # Instantiate runners

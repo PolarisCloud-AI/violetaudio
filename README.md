@@ -31,6 +31,34 @@ This template contains all the required installation instructions, scripts, and 
 - Creating custom incentive mechanisms and running these mechanisms on the subnets. 
 
 In order to simplify the building of subnets, this template abstracts away the complexity of the underlying blockchain and other boilerplate code. While the default behavior of the template is sufficient for a simple subnet, you should customize the template in order to meet your specific requirements.
+
+### 🎵 Audio Processing Subnet Implementation
+
+This template now includes a complete implementation of an **Audio Processing Subnet** that provides:
+- **Audio Transcription**: Convert speech to text using Whisper models
+- **Text-to-Speech (TTS)**: Convert text to speech using Coqui TTS  
+- **Text Summarization**: Summarize long text using BART models
+
+**Key Features:**
+- Multi-language support (10+ languages)
+- Speed-optimized evaluation (40% speed, 40% accuracy, 20% stake)
+- Top 5 miner prioritization
+- Comprehensive testing and evaluation mechanisms
+
+**Quick Start:**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Test transcription pipeline
+python test_transcription.py
+
+# Run miner/validator
+python neurons/miner.py
+python neurons/validator.py
+```
+
+For detailed documentation, see [AUDIO_SUBNET_README.md](AUDIO_SUBNET_README.md).
 ---
 
 ## Introduction
