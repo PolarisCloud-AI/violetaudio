@@ -8,7 +8,7 @@ pip install -r requirements_monitoring.txt
 
 # Set wandb environment variables
 echo "🔑 Configuring Weights & Biases..."
-export WANDB_API_KEY="XXXXXXX"
+export WANDB_API_KEY="2ac90cd4163f5b61805b142b04396e7190a47972"
 export WANDB_MODE="online"
 export WANDB_SILENT="true"
 
@@ -22,7 +22,7 @@ cat > ~/.wandb/settings << EOF
 project = bittensor-inference-subnet
 entity = 
 base_url = https://api.wandb.ai
-api_key = XXXXXX
+api_key = 2ac90cd4163f5b61805b142b04396e7190a47972
 EOF
 
 echo "✅ Wandb configuration created at ~/.wandb/settings"

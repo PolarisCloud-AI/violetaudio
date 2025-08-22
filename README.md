@@ -1,6 +1,6 @@
 <div align="center">
 
-# **Bittensor Subnet Template** <!-- omit in toc -->
+# **🎵 Bittensor Audio Processing Subnet** <!-- omit in toc -->
 [![Discord Chat](https://img.shields.io/discord/308323056592486420.svg)](https://discord.gg/bittensor)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
@@ -12,230 +12,368 @@
 </div>
 
 ---
-- [Quickstarter template](#quickstarter-template)
-- [Introduction](#introduction)
-  - [Example](#example)
-- [Installation](#installation)
-  - [Before you proceed](#before-you-proceed)
-  - [Install](#install)
-- [Writing your own incentive mechanism](#writing-your-own-incentive-mechanism)
-- [Writing your own subnet API](#writing-your-own-subnet-api)
-- [Subnet Links](#subnet-links)
-- [License](#license)
+
+## 📋 Table of Contents
+- [🎯 What This Subnet Does](#-what-this-subnet-does)
+- [🏗️ System Architecture](#️-system-architecture)
+- [🚀 Quick Start](#-quick-start)
+- [🔧 How to Run Each Component](#-how-to-run-each-component)
+- [📊 Performance & Requirements](#-performance--requirements)
+- [🌐 Network Configuration](#-network-configuration)
+- [🧪 Testing & Validation](#-testing--validation)
+- [📚 Available Documentation](#-available-documentation)
+- [🔑 Key Features](#-key-features)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
 ---
-## Quickstarter template
 
-This template contains all the required installation instructions, scripts, and files and functions for:
-- Building Bittensor subnets.
-- Creating custom incentive mechanisms and running these mechanisms on the subnets. 
+## 🎯 What This Subnet Does
 
-In order to simplify the building of subnets, this template abstracts away the complexity of the underlying blockchain and other boilerplate code. While the default behavior of the template is sufficient for a simple subnet, you should customize the template in order to meet your specific requirements.
+This is a **production-ready Audio Processing Subnet** that provides:
 
-### 🎵 Audio Processing Subnet Implementation
+- **🎵 Audio Transcription**: Convert speech to text using Whisper models
+- **🔊 Text-to-Speech (TTS)**: Convert text to speech using Coqui TTS  
+- **📝 Text Summarization**: Summarize long text using BART models
+- **🌍 Multi-language Support**: 10+ languages (English, Spanish, French, German, etc.)
 
-This template now includes a complete implementation of an **Audio Processing Subnet** that provides:
-- **Audio Transcription**: Convert speech to text using Whisper models
-- **Text-to-Speech (TTS)**: Convert text to speech using Coqui TTS  
-- **Text Summarization**: Summarize long text using BART models
+### **Key Features:**
+- **Speed-Optimized Evaluation**: 40% speed, 40% accuracy, 20% stake
+- **Top 5 Miner Prioritization**: Rewards best-performing miners
+- **Real-time Task Management**: Proxy server orchestration
+- **Broken File Handling**: Graceful error handling for corrupted files
+- **Comprehensive Logging**: Detailed performance tracking and debugging
 
-**Key Features:**
-- Multi-language support (10+ languages)
-- Speed-optimized evaluation (40% speed, 40% accuracy, 20% stake)
-- Top 5 miner prioritization
-- Comprehensive testing and evaluation mechanisms
+---
 
-**Quick Start:**
+## 🏗️ System Architecture
+
+```
+User Request → Proxy Server → Task Queue → Validator → Miners → Response → User
+     ↓              ↓           ↓         ↓         ↓         ↓
+File Upload → Database → Firestore → Processing → Evaluation → Final Results
+```
+
+### **Component Structure:**
+- **Proxy Server** (Port 8000): Task management, file storage, miner coordination
+- **Miner** (Port 8091): Process audio/text tasks using AI pipelines
+- **Validator** (Port 8092): Evaluate responses, set weights, coordinate tasks
+
+---
+
+## 🚀 Quick Start
+
+### **Option 1: Automated Startup (Recommended)**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Start all components at once
+./start_complete_system.sh
 
-# Test transcription pipeline
-python test_transcription.py
+# Run complete workflow test
+python test_complete_workflow.py
 
-# Run miner/validator
+# Stop all components
+./stop_complete_system.sh
+```
+
+### **Option 2: Manual Startup**
+```bash
+# Terminal 1: Start Proxy Server
+cd proxy_server
+python enhanced_main.py
+
+# Terminal 2: Start Miner
 python neurons/miner.py
+
+# Terminal 3: Start Validator
 python neurons/validator.py
 ```
 
-For detailed documentation, see [AUDIO_SUBNET_README.md](AUDIO_SUBNET_README.md).
 ---
 
-## Introduction
+## 🔧 How to Run Each Component
 
-**IMPORTANT**: If you are new to Bittensor subnets, read this section before proceeding to [Installation](#installation) section. 
-
-The Bittensor blockchain hosts multiple self-contained incentive mechanisms called **subnets**. Subnets are playing fields in which:
-- Subnet miners who produce value, and
-- Subnet validators who produce consensus
-
-determine together the proper distribution of TAO for the purpose of incentivizing the creation of value, i.e., generating digital commodities, such as intelligence or data. 
-
-Each subnet consists of:
-- Subnet miners and subnet validators.
-- A protocol using which the subnet miners and subnet validators interact with one another. This protocol is part of the incentive mechanism.
-- The Bittensor API using which the subnet miners and subnet validators interact with Bittensor's onchain consensus engine [Yuma Consensus](https://bittensor.com/documentation/validating/yuma-consensus). The Yuma Consensus is designed to drive these actors: subnet validators and subnet miners, into agreement on who is creating value and what that value is worth. 
-
-This starter template is split into three primary files. To write your own incentive mechanism, you should edit these files. These files are:
-1. `template/protocol.py`: Contains the definition of the protocol used by subnet miners and subnet validators.
-2. `neurons/miner.py`: Script that defines the subnet miner's behavior, i.e., how the subnet miner responds to requests from subnet validators.
-3. `neurons/validator.py`: This script defines the subnet validator's behavior, i.e., how the subnet validator requests information from the subnet miners and determines the scores.
-
-### Example
-
-The Bittensor Subnet 1 for Text Prompting is built using this template. See [prompting](https://github.com/macrocosm-os/prompting) for how to configure the files and how to add monitoring and telemetry and support multiple miner types. Also see this Subnet 1 in action on [Taostats](https://taostats.io/subnets/netuid-1/) explorer.
-
----
-
-## Installation
-
-### Before you proceed
-Before you proceed with the installation of the subnet, note the following: 
-
-- Use these instructions to run your subnet locally for your development and testing, or on Bittensor testnet or on Bittensor mainnet. 
-- **IMPORTANT**: We **strongly recommend** that you first run your subnet locally and complete your development and testing before running the subnet on Bittensor testnet. Furthermore, make sure that you next run your subnet on Bittensor testnet before running it on the Bittensor mainnet.
-- You can run your subnet either as a subnet owner, or as a subnet validator or as a subnet miner. 
-- **IMPORTANT:** Make sure you are aware of the minimum compute requirements for your subnet. See the [Minimum compute YAML configuration](./min_compute.yml).
-- Note that installation instructions differ based on your situation: For example, installing for local development and testing will require a few additional steps compared to installing for testnet. Similarly, installation instructions differ for a subnet owner vs a validator or a miner. 
-
-### Install
-
-- **Running locally**: Follow the step-by-step instructions described in this section: [Running Subnet Locally](./docs/running_on_staging.md).
-- **Running on Bittensor testnet**: Follow the step-by-step instructions described in this section: [Running on the Test Network](./docs/running_on_testnet.md).
-- **Running on Bittensor mainnet**: Follow the step-by-step instructions described in this section: [Running on the Main Network](./docs/running_on_mainnet.md).
-
----
-
-## Writing your own incentive mechanism
-
-As described in [Quickstarter template](#quickstarter-template) section above, when you are ready to write your own incentive mechanism, update this template repository by editing the following files. The code in these files contains detailed documentation on how to update the template. Read the documentation in each of the files to understand how to update the template. There are multiple **TODO**s in each of the files identifying sections you should update. These files are:
-- `template/protocol.py`: Contains the definition of the wire-protocol used by miners and validators.
-- `neurons/miner.py`: Script that defines the miner's behavior, i.e., how the miner responds to requests from validators.
-- `neurons/validator.py`: This script defines the validator's behavior, i.e., how the validator requests information from the miners and determines the scores.
-- `template/forward.py`: Contains the definition of the validator's forward pass.
-- `template/reward.py`: Contains the definition of how validators reward miner responses.
-
-In addition to the above files, you should also update the following files:
-- `README.md`: This file contains the documentation for your project. Update this file to reflect your project's documentation.
-- `CONTRIBUTING.md`: This file contains the instructions for contributing to your project. Update this file to reflect your project's contribution guidelines.
-- `template/__init__.py`: This file contains the version of your project.
-- `setup.py`: This file contains the metadata about your project. Update this file to reflect your project's metadata.
-- `docs/`: This directory contains the documentation for your project. Update this directory to reflect your project's documentation.
-
-__Note__
-The `template` directory should also be renamed to your project name.
----
-
-# Writing your own subnet API
-To leverage the abstract `SubnetsAPI` in Bittensor, you can implement a standardized interface. This interface is used to interact with the Bittensor network and can be used by a client to interact with the subnet through its exposed axons.
-
-What does Bittensor communication entail? Typically two processes, (1) preparing data for transit (creating and filling `synapse`s) and (2), processing the responses received from the `axon`(s).
-
-This protocol uses a handler registry system to associate bespoke interfaces for subnets by implementing two simple abstract functions:
-- `prepare_synapse`
-- `process_responses`
-
-These can be implemented as extensions of the generic `SubnetsAPI` interface.  E.g.:
-
-
-This is abstract, generic, and takes(`*args`, `**kwargs`) for flexibility. See the extremely simple base class:
-```python
-class SubnetsAPI(ABC):
-    def __init__(self, wallet: "bt.wallet"):
-        self.wallet = wallet
-        self.dendrite = bt.dendrite(wallet=wallet)
-
-    async def __call__(self, *args, **kwargs):
-        return await self.query_api(*args, **kwargs)
-
-    @abstractmethod
-    def prepare_synapse(self, *args, **kwargs) -> Any:
-        """
-        Prepare the synapse-specific payload.
-        """
-        ...
-
-    @abstractmethod
-    def process_responses(self, responses: List[Union["bt.Synapse", Any]]) -> Any:
-        """
-        Process the responses from the network.
-        """
-        ...
-
+### **1. 🖥️ Proxy Server**
+```bash
+cd proxy_server
+python enhanced_main.py
+# OR
+./start_enhanced_server.sh
 ```
 
+**Purpose**: Task management, file storage, miner coordination
+**Port**: 8000
+**Features**: 
+- Real-time monitoring and load balancing
+- Database integration with Firestore
+- File management with Google Cloud Storage
+- Comprehensive API endpoints
 
-Here is a toy example:
+### **2. ⛏️ Miner**
+```bash
+# Basic run
+python neurons/miner.py
 
-```python
-from bittensor.subnets import SubnetsAPI
-from MySubnet import MySynapse
+# With custom config
+python neurons/miner.py --config path/to/config.yaml
 
-class MySynapseAPI(SubnetsAPI):
-    def __init__(self, wallet: "bt.wallet"):
-        super().__init__(wallet)
-        self.netuid = 99
-
-    def prepare_synapse(self, prompt: str) -> MySynapse:
-        # Do any preparatory work to fill the synapse
-        data = do_prompt_injection(prompt)
-
-        # Fill the synapse for transit
-        synapse = StoreUser(
-            messages=[data],
-        )
-        # Send it along
-        return synapse
-
-    def process_responses(self, responses: List[Union["bt.Synapse", Any]]) -> str:
-        # Look through the responses for information required by your application
-        for response in responses:
-            if response.dendrite.status_code != 200:
-                continue
-            # potentially apply post processing
-            result_data = postprocess_data_from_response(response)
-        # return data to the client
-        return result_data
+# With specific network settings
+python neurons/miner.py \
+  --netuid 49 \
+  --subtensor.network finney \
+  --wallet.name mokoai \
+  --wallet.hotkey default \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port 8091 \
+  --axon.external_ip YOUR_IP \
+  --axon.external_port 8091
 ```
 
-You can use a subnet API to the registry by doing the following:
-1. Download and install the specific repo you want
-1. Import the appropriate API handler from bespoke subnets
-1. Make the query given the subnet specific API
+**Purpose**: Process audio/text tasks using AI pipelines
+**Port**: 8091 (default)
+**Features**:
+- Automatic proxy server integration
+- Broken file handling and validation
+- Comprehensive logging and metrics
+- Support for transcription, TTS, and summarization
 
+### **3. ✅ Validator**
+```bash
+# Basic run
+python neurons/validator.py
 
-
-# Subnet Links
-In order to see real-world examples of subnets in-action, see the `subnet_links.py` document or access them from inside the `template` package by:
-```python
-import template
-template.SUBNET_LINKS
-[{'name': 'sn0', 'url': ''},
- {'name': 'sn1', 'url': 'https://github.com/opentensor/prompting/'},
- {'name': 'sn2', 'url': 'https://github.com/bittranslateio/bittranslate/'},
- {'name': 'sn3', 'url': 'https://github.com/gitphantomman/scraping_subnet/'},
- {'name': 'sn4', 'url': 'https://github.com/manifold-inc/targon/'},
-...
-]
+# With proxy integration
+python neurons/validator.py \
+  --netuid 49 \
+  --subtensor.network finney \
+  --wallet.name luno \
+  --wallet.hotkey arusha \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port 8092 \
+  --axon.external_ip YOUR_IP \
+  --axon.external_port 8092 \
+  --proxy_server_url http://localhost:8000 \
+  --enable_proxy_integration \
+  --proxy_check_interval 30
 ```
 
-## License
-This repository is licensed under the MIT License.
+**Purpose**: Evaluate miner responses, set weights, coordinate tasks
+**Port**: 8092 (default)
+**Features**:
+- Proxy server integration
+- Performance scoring and reward calculation
+- Top 10 miner selection per task
+- Comprehensive evaluation metrics
+
+---
+
+## 📊 Performance & Requirements
+
+### **System Requirements**
+- **Python**: 3.8+
+- **RAM**: 8GB+ (for AI models)
+- **Storage**: 10GB+ (for models and files)
+- **Network**: Stable internet connection
+
+### **Model Performance**
+- **Whisper Tiny**: ~1-3 seconds for 30-second audio
+- **TTS (Tacotron2-DDC)**: ~2-5 seconds for 100 words
+- **BART Large CNN**: ~1-2 seconds for 500 words
+
+### **Supported Languages**
+| Language | Code | Transcription | TTS | Summarization |
+|----------|------|---------------|-----|---------------|
+| English  | en   | ✅            | ✅  | ✅            |
+| Spanish  | es   | ✅            | ✅  | ✅            |
+| French   | fr   | ✅            | ✅  | ✅            |
+| German   | de   | ✅            | ✅  | ✅            |
+| Italian  | it   | ✅            | ✅  | ✅            |
+| Portuguese| pt  | ✅            | ✅  | ✅            |
+| Russian  | ru   | ✅            | ✅  | ✅            |
+| Japanese | ja   | ✅            | ✅  | ✅            |
+| Korean   | ko   | ✅            | ✅  | ✅            |
+| Chinese  | zh   | ✅            | ✅  | ✅            |
+
+---
+
+## 🌐 Network Configuration
+
+### **Local Development (Staging)**
+```bash
+# Network: local (staging)
+# NetUID: Any available number
+# Ports: 8000 (proxy), 8091 (miner), 8092 (validator)
+
+# Follow detailed setup in:
+./docs/running_on_staging.md
+```
+
+### **Testnet/Mainnet**
+```bash
+# Network: test or finney
+# NetUID: 49 (or your subnet number)
+# External IP: Your public IP address
+
+# Follow detailed setup in:
+./docs/running_on_testnet.md
+./docs/running_on_mainnet.md
+```
+
+---
+
+## 🧪 Testing & Validation
+
+### **Test Individual Components**
+```bash
+# Test transcription pipeline
+python test_transcription.py
+
+# Test proxy server
+cd proxy_server
+python -m pytest tests/ -v
+
+# Test complete workflow
+python test_complete_workflow.py
+```
+
+### **Monitor System Health**
+```bash
+# Check proxy server
+curl http://localhost:8000/api/v1/health
+
+# Check validator integration
+curl http://localhost:8000/api/v1/validator/integration
+
+# View logs
+tail -f logs/proxy_server.log
+tail -f logs/miner.log
+tail -f logs/validator.log
+```
+
+### **Expected Test Results**
+```
+✅ PROXY_HEALTH: Server healthy - healthy
+✅ VALIDATOR_INTEGRATION: Integration successful
+✅ TASK_SUBMISSION: 3/3 tasks submitted
+✅ TASK_DISTRIBUTION: Tasks distributed successfully
+✅ TASK_MONITORING: All tasks completed!
+✅ FINAL_RESULTS: Success Rate: 100%
+```
+
+---
+
+## 📚 Available Documentation
+
+1. **`README.md`** - This file (main project overview and setup)
+2. **`AUDIO_SUBNET_README.md`** - Detailed subnet features and configuration
+3. **`proxy_server/ENHANCED_README.md`** - Proxy server setup and API reference
+4. **`COMPLETE_WORKFLOW_README.md`** - End-to-end testing guide
+5. **`docs/running_on_staging.md`** - Local development setup
+6. **`docs/running_on_testnet.md`** - Testnet deployment
+7. **`docs/running_on_mainnet.md`** - Production deployment
+
+---
+
+## 🔑 Key Features
+
+### **✅ Task Management**
+- **Smart Distribution**: Assigns tasks to optimal miners (1-10 miners per task)
+- **Status Tracking**: Complete lifecycle from creation to completion
+- **Load Balancing**: Intelligent miner selection based on performance
+
+### **✅ Response Handling**
+- **Real-time Processing**: Immediate feedback on first response
+- **Quality Validation**: Comprehensive scoring and evaluation
+- **Error Handling**: Graceful handling of failed responses and broken files
+
+### **✅ Proxy Server Integration**
+- **Task Filtering**: Miners only get assigned tasks (not completed ones)
+- **Response Submission**: Results sent to proxy server database
+- **API Endpoints**: Comprehensive REST API for all operations
+
+### **✅ Performance & Monitoring**
+- **Real-time Metrics**: Live task progress and miner performance
+- **Comprehensive Logging**: Detailed tracking for debugging
+- **Health Checks**: System monitoring and alerting
+
+---
+
+## 🚀 Installation
+
+### **Prerequisites**
+```bash
+# Install Bittensor
+pip install bittensor
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### **Environment Setup**
+```bash
+# Set environment variables
+export ENVIRONMENT="production"
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+export GOOGLE_APPLICATION_CREDENTIALS="db/violet.json"
+```
+
+### **Database Configuration**
+- **Firestore**: Main database for task and response metadata
+- **Google Cloud Storage**: File storage for audio and text data
+- **Collections**: tasks, miner_responses, files, validators, final_results
+
+---
+
+## 🤝 Contributing
+
+### **Development Setup**
+1. Fork the repository
+2. Create feature branch
+3. Run tests: `./run_tests.sh`
+4. Submit pull request
+
+### **Code Standards**
+- Follow PEP 8 style guidelines
+- Include comprehensive tests
+- Document all public APIs
+- Use type hints throughout
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
 ```text
 # The MIT License (MIT)
 # Copyright © 2024 Opentensor Foundation
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# documentation files (the "Software"), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 # The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 # the Software.
 
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+# CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 ```
+
+---
+
+## 🆘 Support
+
+For support and questions:
+- **Discord**: Join the [Bittensor Discord](https://discord.gg/bittensor) for community support
+- **Issues**: Report bugs and feature requests on GitHub
+- **Documentation**: Check the detailed documentation files listed above
+- **API Docs**: Visit `http://localhost:8000/docs` when proxy server is running
+
+---
+
+**🎉 Happy Mining and Validating! This subnet is production-ready with a sophisticated proxy server architecture that handles the complete workflow from task submission to final result delivery!**
