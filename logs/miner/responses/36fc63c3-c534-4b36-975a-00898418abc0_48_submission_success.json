@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-08-22T19:28:41.558131",
+  "event": "result_submission_success",
+  "task_id": "36fc63c3-c534-4b36-975a-00898418abc0",
+  "miner_uid": 48,
+  "submission_time": 1.0528218746185303,
+  "response_status": 200,
+  "response_headers": {
+    "date": "Fri, 22 Aug 2025 16:28:40 GMT",
+    "server": "uvicorn",
+    "content-length": "130",
+    "content-type": "application/json"
+  }
+}

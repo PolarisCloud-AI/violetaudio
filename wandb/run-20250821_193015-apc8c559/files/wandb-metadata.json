@@ -1,0 +1,25 @@
+{
+  "os": "macOS-10.16-x86_64-i386-64bit",
+  "python": "CPython 3.12.9",
+  "startedAt": "2025-08-21T16:30:15.562046Z",
+  "program": "<python with no main file>",
+  "git": {
+    "remote": "https://github.com/tobiusaolo/violet.git",
+    "commit": "df62aaf41618bcbb774096f5e65fd0b99d5d90b0"
+  },
+  "root": "/Users/user/Documents/Jarvis/bittensor-subnet-template",
+  "host": "USERs-MacBook-Pro.local",
+  "executable": "/Users/user/miniconda3/bin/python",
+  "cpu_count": 2,
+  "cpu_count_logical": 4,
+  "disk": {
+    "/": {
+      "total": "250685575168",
+      "used": "243776942080"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "writerId": "hg3wb0pvd8j7r5n63ij0mrq4wdy8kf1e"
+}

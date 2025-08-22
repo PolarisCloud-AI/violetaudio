@@ -1,0 +1,1 @@
+{"architecture":"proxy-validator-miner","startup_timestamp":"2025-08-21T18:58:40.477677","features":["caching","monitoring","wandb","grafana"],"_step":0,"_timestamp":1.755791921525475e+09,"system_startup":true,"server_version":"1.0.0","_wandb":{"runtime":610},"_runtime":610}

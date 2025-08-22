@@ -1,0 +1,1 @@
+{"_timestamp":1.75579659912911e+09,"system_startup":true,"features":["caching","monitoring","wandb","grafana"],"startup_timestamp":"2025-08-21T20:16:37.355996","_wandb":{"runtime":4137},"architecture":"proxy-validator-miner","server_version":"1.0.0","_runtime":4137,"_step":0}

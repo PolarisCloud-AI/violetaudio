@@ -1,0 +1,22 @@
+{
+  "response_id": "test_task_002_123_1755868869",
+  "timestamp": "2025-08-22T16:21:09.640725",
+  "task_id": "test_task_002",
+  "task_type": "tts",
+  "miner_uid": 123,
+  "success": false,
+  "processing_time": 1.0,
+  "input_size": 512,
+  "result_summary": {
+    "task_type": "tts",
+    "has_error": true,
+    "output_size": 0,
+    "text_length": 0
+  },
+  "error": "Test error occurred",
+  "metrics": {
+    "accuracy_score": 0.0,
+    "speed_score": 0.0,
+    "confidence": 0.0
+  }
+}

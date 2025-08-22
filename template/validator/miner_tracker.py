@@ -269,7 +269,7 @@ class MinerTracker:
         for uid in selected_uids:
             self.miners[uid].assign_task(task_type)
         
-        bt.logging.info(f"🎯 Selected {len(selected_uids)} miners for {task_type} task: {selected_uids}")
+        bt.logging.debug(f"🎯 Selected {len(selected_uids)} miners for {task_type}: {selected_uids}")
         return selected_uids
     
     def update_task_result(self, uid: int, task_type: str, success: bool, processing_time: float):
@@ -319,7 +319,7 @@ class MinerTracker:
                 removed_count += 1
         
         if removed_count > 0:
-            bt.logging.info(f"🧹 Cleaned up {removed_count} inactive miners")
+            bt.logging.debug(f"🧹 Cleaned up {removed_count} inactive miners")
             self.save_metrics()
     
     def get_performance_ranking(self, task_type: str = None) -> List[Tuple[int, float]]:
@@ -333,29 +333,21 @@ class MinerTracker:
         return rankings
     
     def print_miner_summary(self):
-        """Print summary of all miners"""
-        bt.logging.info("=" * 80)
-        bt.logging.info("📊 MINER PERFORMANCE SUMMARY")
-        bt.logging.info("=" * 80)
-        
+        """Print summary of all miners (concise version)"""
         if not self.miners:
-            bt.logging.info("No miners registered")
+            bt.logging.info("📊 No miners registered")
             return
         
         # Sort by performance score
         rankings = self.get_performance_ranking()
         
-        for rank, (uid, score) in enumerate(rankings[:10], 1):  # Top 10
+        # Show only top 5 miners with concise info
+        bt.logging.info(f"📊 Top 5 miners by performance:")
+        for rank, (uid, score) in enumerate(rankings[:5], 1):
             miner = self.miners[uid]
-            bt.logging.info(f"{rank:2d}. UID {uid:3d} | Score: {score:.3f} | "
-                          f"Tasks: {miner.total_tasks} | Success: {miner.successful_tasks}/{miner.total_tasks} | "
-                          f"Load: {miner.current_load}/{miner.max_concurrent_tasks} | "
-                          f"Stake: {miner.stake:,.0f} TAO")
+            success_rate = miner.successful_tasks / max(miner.total_tasks, 1)
+            bt.logging.info(f"{rank}. UID {uid:3d} | Score: {score:.3f} | Success: {success_rate:.1%} | Load: {miner.current_load}")
         
-        # Overall stats
+        # Overall stats (concise)
         stats = self.get_miner_stats()
-        bt.logging.info("-" * 80)
-        bt.logging.info(f"📈 Overall: {stats['total_miners']} miners, "
-                      f"{stats['available_miners']} available, "
-                      f"Avg success rate: {stats['average_success_rate']:.2%}")
-        bt.logging.info("=" * 80)
+        bt.logging.info(f"📈 Total: {stats['total_miners']} miners, {stats['available_miners']} available")

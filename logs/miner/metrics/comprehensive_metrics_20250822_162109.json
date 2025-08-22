@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-08-22T16:21:09.642525",
+  "miner_info": {
+    "uid": 123,
+    "hotkey": "mock_hotkey",
+    "coldkey": "mock_coldkey"
+  },
+  "performance_metrics": {
+    "total_responses": 2,
+    "successful_responses": 1,
+    "failed_responses": 1,
+    "success_rate": 50.0,
+    "total_processing_time": 3.5,
+    "average_processing_time": 1.75,
+    "uptime": 0.006330966949462891
+  },
+  "pipeline_status": {
+    "transcription_pipeline": true,
+    "tts_pipeline": true,
+    "summarization_pipeline": true
+  },
+  "system_info": {
+    "proxy_server_url": "http://localhost:8000",
+    "task_query_interval": 10,
+    "logs_directory": "/Users/user/Documents/Jarvis/bittensor-subnet-template/logs"
+  }
+}

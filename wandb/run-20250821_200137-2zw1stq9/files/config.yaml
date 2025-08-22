@@ -1,0 +1,49 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            g9duvt2bhbij29seph7j0wvj6wwqvlzl:
+                cpu_count: 2
+                cpu_count_logical: 4
+                disk:
+                    /:
+                        total: "250685575168"
+                        used: "243825803264"
+                executable: /Users/user/miniconda3/bin/python
+                git:
+                    commit: df62aaf41618bcbb774096f5e65fd0b99d5d90b0
+                    remote: https://github.com/tobiusaolo/violet.git
+                host: USERs-MacBook-Pro.local
+                memory:
+                    total: "8589934592"
+                os: macOS-10.16-x86_64-i386-64bit
+                program: <python with no main file>
+                python: CPython 3.12.9
+                root: /Users/user/Documents/Jarvis/bittensor-subnet-template
+                startedAt: "2025-08-21T17:01:37.774855Z"
+                writerId: g9duvt2bhbij29seph7j0wvj6wwqvlzl
+        m: []
+        python_version: 3.12.9
+        t:
+            "1":
+                - 105
+            "2":
+                - 105
+            "3":
+                - 15
+                - 16
+                - 24
+            "4": 3.12.9
+            "5": 0.21.1
+            "12": 0.21.1
+            "13": darwin-x86_64
+api_key_set:
+    value: true
+architecture:
+    value: proxy-validator-miner
+monitoring:
+    value: true
+subnet_name:
+    value: inference-subnet
+version:
+    value: 1.0.0

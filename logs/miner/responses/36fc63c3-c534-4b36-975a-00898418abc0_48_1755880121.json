@@ -1,0 +1,22 @@
+{
+  "response_id": "36fc63c3-c534-4b36-975a-00898418abc0_48_1755880121",
+  "timestamp": "2025-08-22T19:28:41.560291",
+  "task_id": "36fc63c3-c534-4b36-975a-00898418abc0",
+  "task_type": "transcription",
+  "miner_uid": 48,
+  "success": true,
+  "processing_time": 0.9809229373931885,
+  "input_size": 334496,
+  "result_summary": {
+    "task_type": "transcription",
+    "has_error": false,
+    "output_size": 116,
+    "confidence": 0.95
+  },
+  "error": null,
+  "metrics": {
+    "accuracy_score": 0.0,
+    "speed_score": 0.0,
+    "confidence": 0.95
+  }
+}
