@@ -364,10 +364,30 @@ async def startup_event():
     try:
         print("🚀 Starting Enhanced Proxy Server...")
         
-        # Initialize database
+        # Initialize database with robust path resolution
         from proxy_server.database.schema import DatabaseManager
+        import os
+        
+        # Try multiple possible paths for the credentials file
+        possible_paths = [
+            "proxy_server/db/violet.json",  # From project root
+            "db/violet.json",               # From proxy_server directory
+            os.path.join(os.path.dirname(__file__), "db", "violet.json"),  # Absolute path
+            os.path.join(os.getcwd(), "proxy_server", "db", "violet.json")  # Current working directory
+        ]
+        
+        credentials_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                credentials_path = path
+                print(f"✅ Found credentials at: {path}")
+                break
+        
+        if not credentials_path:
+            raise FileNotFoundError(f"Firebase credentials not found. Tried paths: {possible_paths}")
+        
         global db_manager
-        db_manager = DatabaseManager("proxy_server/db/violet.json")
+        db_manager = DatabaseManager(credentials_path)
         db_manager.initialize()
         
                 # Initialize managers
@@ -449,6 +469,9 @@ async def submit_transcription_task(
             file_type="transcription"
         )
         
+        # Get the actual file metadata to get the correct local_path
+        file_metadata = await file_manager.get_file_metadata(file_id)
+        
         # Create task using enhanced schema
         task_data = {
             'task_type': 'transcription',
@@ -457,7 +480,7 @@ async def submit_transcription_task(
                 'file_name': audio_file.filename,
                 'file_type': audio_file.content_type,
                 'file_size': len(file_data),
-                'local_path': f"/proxy_server/local_storage/user_audio/{file_id}",
+                'local_path': file_metadata['local_path'] if file_metadata else f"/proxy_server/local_storage/user_audio/{file_id}",
                 'file_url': f"/api/v1/files/{file_id}",
                 'checksum': str(hash(file_data)),  # Simple hash for now
                 'uploaded_at': datetime.now()
@@ -517,6 +540,9 @@ async def submit_tts_task(
             file_type="tts"
         )
         
+        # Get the actual file metadata to get the correct local_path
+        file_metadata = await file_manager.get_file_metadata(file_id)
+        
         # Create task using enhanced schema
         task_data = {
             'task_type': 'tts',
@@ -525,7 +551,7 @@ async def submit_tts_task(
                 'file_name': "tts_input.txt",
                 'file_type': "text/plain",
                 'file_size': len(text_bytes),
-                'local_path': f"/proxy_server/local_storage/user_audio/{file_id}",
+                'local_path': file_metadata['local_path'] if file_metadata else f"/proxy_server/local_storage/tts_audio/{file_id}",
                 'file_url': f"/api/v1/files/{file_id}",
                 'checksum': str(hash(text_bytes)),  # Simple hash for now
                 'uploaded_at': datetime.now()
@@ -585,6 +611,9 @@ async def submit_summarization_task(
             file_type="summarization"
         )
         
+        # Get the actual file metadata to get the correct local_path
+        file_metadata = await file_manager.get_file_metadata(file_id)
+        
         # Create task using enhanced schema
         task_data = {
             'task_type': 'summarization',
@@ -593,8 +622,7 @@ async def submit_summarization_task(
                 'file_name': "summarization_input.txt",
                 'file_type': "text/plain",
                 'file_size': len(text_bytes),
-                'local_path': f"/proxy_server/local_storage/user_audio/{file_id}",
-
+                'local_path': file_metadata['local_path'] if file_metadata else f"/proxy_server/local_storage/summarization_files/{file_id}",
                 'file_url': f"/api/v1/files/{file_id}",
                 'checksum': str(hash(text_bytes)),  # Simple hash for now
                 'uploaded_at': datetime.now()
@@ -721,11 +749,31 @@ async def submit_miner_response(
 async def get_tasks_for_validator(validator_uid: int = None):
     """Get tasks ready for validator evaluation"""
     try:
+        print(f"🔍 Validator requesting tasks (validator_uid: {validator_uid})")
+        
         # If no validator_uid provided, get all tasks ready for evaluation
         if validator_uid is None:
             tasks = await validator_api.get_tasks_for_evaluation()
         else:
             tasks = await validator_api.get_tasks_for_evaluation(validator_uid)
+        
+        print(f"✅ Retrieved {len(tasks)} tasks for validator")
+        
+        # Debug: Log task structure for first few tasks
+        for i, task in enumerate(tasks[:3]):  # Log first 3 tasks
+            print(f"   Task {i+1}: {task.get('task_id', 'no_id')}")
+            print(f"      Type: {task.get('task_type', 'no_type')}")
+            print(f"      Status: {task.get('status', 'no_status')}")
+            print(f"      Has input_data: {'input_data' in task}")
+            print(f"      Has input_file: {'input_file' in task}")
+            print(f"      Has input_file_id: {'input_file_id' in task}")
+            if 'input_data' in task and task['input_data']:
+                print(f"      Input data type: {type(task['input_data']).__name__}")
+                if isinstance(task['input_data'], str):
+                    print(f"      Input data length: {len(task['input_data'])} chars")
+                elif isinstance(task['input_data'], bytes):
+                    print(f"      Input data length: {len(task['input_data'])} bytes")
+            print()
         
         return {
             "success": True,
@@ -734,6 +782,7 @@ async def get_tasks_for_validator(validator_uid: int = None):
         }
         
     except Exception as e:
+        print(f"❌ Error in get_tasks_for_validator: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 @app.post("/api/v1/validator/evaluation")

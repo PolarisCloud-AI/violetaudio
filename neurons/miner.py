@@ -23,7 +23,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import uvicorn
 from pydantic import BaseModel
-
+import typing
+from typing import Dict, Any
 # Response models for the endpoints
 class TaskResponse(BaseModel):
     task_id: str
@@ -32,6 +33,7 @@ class TaskResponse(BaseModel):
     input_file: Dict[str, Any]
     source_language: str
     priority: str
+
 
 class MinerResponse(BaseModel):
     task_id: str
