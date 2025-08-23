@@ -22,7 +22,8 @@ from pathlib import Path
 # Import our custom modules
 from proxy_server.database.enhanced_schema import (
     TaskStatus, TaskPriority, TaskType, TaskModel, 
-    MinerInfo, FileReference, COLLECTIONS, DatabaseOperations
+    MinerInfo, FileReference, TextContent, COLLECTIONS, DatabaseOperations,
+    generate_text_content_id
 )
 from proxy_server.managers.task_manager import TaskManager
 from proxy_server.managers.file_manager import FileManager
@@ -524,45 +525,60 @@ async def submit_transcription_task(
 @app.post("/api/v1/tts")
 async def submit_tts_task(
     text: str = Form(...),
-    target_language: str = Form("en"),
+    source_language: str = Form("en"),
     priority: str = Form("normal")
 ):
-    """Submit text-to-speech task"""
+    """Submit text-to-speech task with text stored directly in database"""
     try:
-        # Encode text as bytes
-        text_bytes = text.encode('utf-8')
+        # Validate text length
+        if len(text.strip()) < 10:
+            raise HTTPException(status_code=400, detail="Text too short for TTS (min 10 characters)")
         
-        # Create a text file for TTS input
-        file_id = await file_manager.upload_file(
-            text_bytes, 
-            "tts_input.txt", 
-            "text/plain",
-            file_type="tts"
-        )
+        # Use the source language provided by the user
+        detected_language = source_language
+        language_confidence = 1.0
         
-        # Get the actual file metadata to get the correct local_path
-        file_metadata = await file_manager.get_file_metadata(file_id)
+        # Create text content object
+        text_content = {
+            'content_id': generate_text_content_id(),
+            'text': text.strip(),
+            'source_language': detected_language,
+            'detected_language': detected_language,
+            'language_confidence': language_confidence,
+            'text_length': len(text),
+            'word_count': len(text.split()),
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'metadata': {
+                'original_source_language': source_language,
+                'detection_method': 'manual'
+            }
+        }
         
-        # Create task using enhanced schema
+        # Create task data
         task_data = {
             'task_type': 'tts',
-            'input_file': {
-                'file_id': file_id,
-                'file_name': "tts_input.txt",
-                'file_type': "text/plain",
-                'file_size': len(text_bytes),
-                'local_path': file_metadata['local_path'] if file_metadata else f"/proxy_server/local_storage/tts_audio/{file_id}",
-                'file_url': f"/api/v1/files/{file_id}",
-                'checksum': str(hash(text_bytes)),  # Simple hash for now
-                'uploaded_at': datetime.now()
-            },
+            'input_text': text_content,
             'priority': priority,
-            'target_language': target_language,
+            'source_language': detected_language,
             'required_miner_count': 3
         }
         
-        # Use enhanced database operations
+        # Create task in database
         task_id = DatabaseOperations.create_task(db_manager.get_db(), task_data)
+        
+        # Auto-assign task to available miners
+        assignment_success = DatabaseOperations.auto_assign_task(
+            db_manager.get_db(),
+            task_id,
+            'tts',
+            task_data.get('required_miner_count', 3)
+        )
+        
+        if assignment_success:
+            print(f"✅ Task {task_id} automatically assigned to miners")
+        else:
+            print(f"⚠️ Task {task_id} created but could not be assigned to miners")
         
         # Track metrics
         system_metrics.increment_tasks()
@@ -573,19 +589,24 @@ async def submit_tts_task(
                 'task_type': 'tts',
                 'task_id': task_id,
                 'priority': priority,
-                'target_language': target_language,
-                'file_id': file_id,
-                'created_at': datetime.now().isoformat()
+                'source_language': detected_language,
+                'detected_language': detected_language,
+                'language_confidence': language_confidence,
+                'text_length': len(text),
+                'word_count': len(text.split()),
+                'created_at': datetime.now().isoformat(),
+                'auto_assigned': assignment_success
             })
-        
-        # Start task distribution
-        # Note: The workflow orchestrator handles task distribution automatically
-        # We don't need to call a specific method here
         
         return {
             "success": True,
             "task_id": task_id,
-            "file_id": file_id,
+            "text_content_id": text_content['content_id'],
+            "detected_language": detected_language,
+            "language_confidence": language_confidence,
+            "text_length": len(text),
+            "word_count": len(text.split()),
+            "auto_assigned": assignment_success,
             "message": "TTS task submitted successfully"
         }
         
@@ -598,42 +619,57 @@ async def submit_summarization_task(
     source_language: str = Form("en"),
     priority: str = Form("normal")
 ):
-    """Submit summarization task"""
+    """Submit summarization task with text stored directly in database"""
     try:
-        # Encode text as bytes
-        text_bytes = text.encode('utf-8')
+        # Validate text length
+        if len(text.strip()) < 50:
+            raise HTTPException(status_code=400, detail="Text too short for summarization (min 50 characters)")
         
-        # Create a text file for summarization input
-        file_id = await file_manager.upload_file(
-            text_bytes, 
-            "summarization_input.txt", 
-            "text/plain",
-            file_type="summarization"
-        )
+        # Use the source language provided by the user
+        detected_language = source_language
+        language_confidence = 1.0
         
-        # Get the actual file metadata to get the correct local_path
-        file_metadata = await file_manager.get_file_metadata(file_id)
+        # Create text content object
+        text_content = {
+            'content_id': generate_text_content_id(),
+            'text': text.strip(),
+            'source_language': detected_language,
+            'detected_language': detected_language,
+            'language_confidence': language_confidence,
+            'text_length': len(text),
+            'word_count': len(text.split()),
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'metadata': {
+                'original_source_language': source_language,
+                'detection_method': 'auto' if source_language == "auto" else 'manual'
+            }
+        }
         
-        # Create task using enhanced schema
+        # Create task using enhanced schema with text content
         task_data = {
             'task_type': 'summarization',
-            'input_file': {
-                'file_id': file_id,
-                'file_name': "summarization_input.txt",
-                'file_type': "text/plain",
-                'file_size': len(text_bytes),
-                'local_path': file_metadata['local_path'] if file_metadata else f"/proxy_server/local_storage/summarization_files/{file_id}",
-                'file_url': f"/api/v1/files/{file_id}",
-                'checksum': str(hash(text_bytes)),  # Simple hash for now
-                'uploaded_at': datetime.now()
-            },
+            'input_text': text_content,
             'priority': priority,
-            'source_language': source_language,
+            'source_language': detected_language,
             'required_miner_count': 3
         }
         
         # Use enhanced database operations
         task_id = DatabaseOperations.create_task(db_manager.get_db(), task_data)
+        
+        # Automatically assign task to available miners
+        assignment_success = DatabaseOperations.auto_assign_task(
+            db_manager.get_db(), 
+            task_id, 
+            'summarization', 
+            task_data.get('required_miner_count', 3)
+        )
+        
+        if assignment_success:
+            print(f"✅ Task {task_id} automatically assigned to miners")
+        else:
+            print(f"⚠️ Task {task_id} created but could not be assigned to miners")
         
         # Track metrics
         system_metrics.increment_tasks()
@@ -644,24 +680,244 @@ async def submit_summarization_task(
                 'task_type': 'summarization',
                 'task_id': task_id,
                 'priority': priority,
-                'source_language': source_language,
-                'file_id': file_id,
-                'created_at': datetime.now().isoformat()
+                'source_language': detected_language,
+                'detected_language': detected_language,
+                'language_confidence': language_confidence,
+                'text_length': len(text),
+                'word_count': len(text.split()),
+                'created_at': datetime.now().isoformat(),
+                'auto_assigned': assignment_success
             })
-        
-        # Start task distribution
-        # Note: The workflow orchestrator handles task distribution automatically
-        # We don't need to call a specific method here
         
         return {
             "success": True,
             "task_id": task_id,
-            "file_id": file_id,
+            "text_content_id": text_content['content_id'],
+            "detected_language": detected_language,
+            "language_confidence": language_confidence,
+            "text_length": len(text),
+            "word_count": len(text.split()),
+            "auto_assigned": assignment_success,
             "message": "Summarization task submitted successfully"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to submit task: {str(e)}")
+
+@app.get("/api/v1/miner/summarization/{task_id}")
+async def get_summarization_task_content(task_id: str):
+    """Get summarization task text content for miners"""
+    try:
+        # Get task from database
+        task = DatabaseOperations.get_task(db_manager.get_db(), task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        if task.get('task_type') != 'summarization':
+            raise HTTPException(status_code=400, detail="Task is not a summarization task")
+        
+        # Get text content
+        if 'input_text' in task and task['input_text']:
+            text_content = task['input_text']
+        elif 'input_file' in task and task['input_file']:
+            # Fallback to file-based approach
+            file_id = task['input_file']['file_id']
+            file_content = await file_manager.get_file_content(file_id)
+            if file_content:
+                text_content = {
+                    'text': file_content.decode('utf-8'),
+                    'source_language': task.get('source_language', 'en'),
+                    'detected_language': task.get('source_language', 'en'),
+                    'language_confidence': 1.0
+                }
+            else:
+                raise HTTPException(status_code=404, detail="Text content not found")
+        else:
+            raise HTTPException(status_code=404, detail="No input content found for task")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "text_content": text_content,
+            "task_metadata": {
+                "priority": task.get('priority'),
+                "source_language": task.get('source_language', 'en'),
+                "required_miner_count": task.get('required_miner_count', 1)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get task content: {str(e)}")
+
+@app.get("/api/v1/miner/tts/{task_id}")
+async def get_tts_task_content(task_id: str):
+    """Get TTS task text content for miners"""
+    try:
+        # Get task from database
+        task = DatabaseOperations.get_task(db_manager.get_db(), task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        if task.get('task_type') != 'tts':
+            raise HTTPException(status_code=400, detail="Task is not a TTS task")
+        
+        # Get text content
+        if 'input_text' in task and task['input_text']:
+            text_content = task['input_text']
+        elif 'input_file' in task and task['input_file']:
+            # Fallback to file-based approach
+            file_id = task['input_file']['file_id']
+            file_content = await file_manager.get_file_content(file_id)
+            if file_content:
+                text_content = {
+                    'text': file_content.decode('utf-8'),
+                    'source_language': task.get('source_language', 'en'),
+                    'detected_language': task.get('source_language', 'en'),
+                    'language_confidence': 1.0
+                }
+            else:
+                raise HTTPException(status_code=404, detail="Text content not found")
+        else:
+            raise HTTPException(status_code=404, detail="No input content found for task")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "text_content": text_content,
+            "task_metadata": {
+                "priority": task.get("priority"),
+                "source_language": task.get("source_language", "en"),
+                "required_miner_count": task.get("required_miner_count", 1)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get task content: {str(e)}")
+
+@app.post("/api/v1/miner/tts/upload-audio")
+async def upload_tts_audio(
+    task_id: str = Form(...),
+    miner_uid: int = Form(...),
+    audio_file: UploadFile = File(...),
+    processing_time: float = Form(...),
+    accuracy_score: float = Form(0.0),
+    speed_score: float = Form(0.0)
+):
+    """Upload TTS audio file generated by miner"""
+    try:
+        # Validate required parameters
+        if not task_id or task_id == "None" or task_id == "null":
+            raise HTTPException(status_code=400, detail="Invalid task_id provided")
+        
+        if not miner_uid or miner_uid <= 0:
+            raise HTTPException(status_code=400, detail="Invalid miner_uid provided")
+        
+        # Validate audio file
+        if not audio_file.filename or not audio_file.filename.endswith('.wav'):
+            raise HTTPException(status_code=400, detail="Audio file must be a .wav file")
+        
+        # Read audio file content
+        audio_content = await audio_file.read()
+        if len(audio_content) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+        
+        # Generate unique filename
+        import uuid
+        audio_filename = f"{task_id}_{miner_uid}_{uuid.uuid4().hex[:8]}.wav"
+        
+        # Store audio file in local storage
+        audio_path = f"proxy_server/local_storage/tts_audio/{audio_filename}"
+        os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+        
+        with open(audio_path, "wb") as f:
+            f.write(audio_content)
+        
+        # Create file reference
+        file_reference = {
+            'file_id': str(uuid.uuid4()),
+            'file_name': audio_filename,
+            'file_type': 'audio/wav',
+            'file_size': len(audio_content),
+            'local_path': audio_path,
+            'file_url': f"/api/v1/tts/audio/{audio_filename}",
+            'checksum': str(hash(audio_content)),
+            'created_at': datetime.now(),
+            'updated_at': datetime.now()
+        }
+        
+        # Create response data with audio file info
+        response_data = {
+            'output_data': {
+                'audio_file': file_reference,
+                'audio_duration': 0.0,  # Will be calculated by validator
+                'sample_rate': 22050,   # Default, will be verified by validator
+                'bit_depth': 16,        # Default, will be verified by validator
+                'channels': 1           # Default, will be verified by validator
+            },
+            'processing_time': processing_time,
+            'accuracy_score': accuracy_score,
+            'speed_score': speed_score
+        }
+        
+        # Submit the response
+        success = await miner_response_handler.handle_miner_response(task_id, miner_uid, response_data)
+        
+        if success:
+            print(f"✅ TTS audio uploaded successfully for task {task_id} by miner {miner_uid}")
+            print(f"   Audio file: {audio_filename}")
+            print(f"   File size: {len(audio_content)} bytes")
+            print(f"   Local path: {audio_path}")
+            
+            return {
+                "success": True,
+                "message": "TTS audio uploaded successfully",
+                "task_id": task_id,
+                "miner_uid": miner_uid,
+                "audio_file": file_reference,
+                "file_url": f"/api/v1/tts/audio/{audio_filename}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to process TTS response")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error uploading TTS audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload audio: {str(e)}")
+
+@app.get("/api/v1/tts/audio/{filename}")
+async def get_tts_audio(filename: str):
+    """Serve TTS audio files"""
+    try:
+        # Security: Only allow .wav files
+        if not filename.endswith('.wav'):
+            raise HTTPException(status_code=400, detail="Only .wav files are allowed")
+        
+        # Construct file path
+        file_path = f"proxy_server/local_storage/tts_audio/{filename}"
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        
+        # Return audio file
+        return FileResponse(
+            path=file_path,
+            media_type="audio/wav",
+            filename=filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error serving TTS audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve audio: {str(e)}")
 
 @app.post("/api/v1/miner/response")
 async def submit_miner_response(
@@ -744,6 +1000,101 @@ async def submit_miner_response(
         print(f"   Task ID: {task_id}")
         print(f"   Miner UID: {miner_uid}")
         raise HTTPException(status_code=500, detail=f"Failed to submit response: {str(e)}")
+
+@app.post("/api/v1/miner/tts/upload")
+async def upload_tts_audio(
+    task_id: str = Form(...),
+    miner_uid: int = Form(...),
+    audio_file: UploadFile = File(...),
+    processing_time: float = Form(...),
+    accuracy_score: float = Form(0.0),
+    speed_score: float = Form(0.0)
+):
+    """Upload TTS audio file from miner"""
+    try:
+        # Validate required parameters
+        if not task_id or task_id == "None" or task_id == "null":
+            raise HTTPException(status_code=400, detail="Invalid task_id provided")
+        
+        if not miner_uid or miner_uid <= 0:
+            raise HTTPException(status_code=400, detail="Invalid miner_uid provided")
+        
+        # Validate audio file
+        if not audio_file or audio_file.filename == "":
+            raise HTTPException(status_code=400, detail="No audio file provided")
+        
+        # Check file type (should be .wav)
+        if not audio_file.filename.lower().endswith('.wav'):
+            raise HTTPException(status_code=400, detail="Audio file must be .wav format")
+        
+        # Read audio file content
+        audio_content = await audio_file.read()
+        if len(audio_content) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+        
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{task_id}_{miner_uid}_{timestamp}.wav"
+        
+        # Save audio file to local storage
+        audio_dir = "proxy_server/local_storage/tts_audio"
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        file_path = os.path.join(audio_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(audio_content)
+        
+        # Create file reference
+        file_reference = {
+            'file_id': f"{task_id}_{miner_uid}",
+            'file_name': filename,
+            'file_type': "audio/wav",
+            'file_size': len(audio_content),
+            'local_path': file_path,
+            'file_url': f"/api/v1/tts/audio/{task_id}_{miner_uid}",
+            'checksum': str(hash(audio_content)),
+            'created_at': datetime.now()
+        }
+        
+        # Create response payload
+        response_payload = {
+            'output_data': {
+                'audio_file': file_reference,
+                'duration': 0.0,  # Will be calculated by validator
+                'sample_rate': 22050,  # Default sample rate
+                'format': 'wav'
+            },
+            'processing_time': processing_time,
+            'accuracy_score': accuracy_score,
+            'speed_score': speed_score
+        }
+        
+        # Handle the response with miner_response_handler
+        success = await miner_response_handler.handle_miner_response(task_id, miner_uid, response_payload)
+        
+        if success:
+            print(f"✅ TTS audio uploaded successfully for task {task_id} by miner {miner_uid}")
+            print(f"   File: {filename}")
+            print(f"   Size: {len(audio_content)} bytes")
+            print(f"   Path: {file_path}")
+            
+            return {
+                "success": True,
+                "message": "TTS audio uploaded successfully",
+                "task_id": task_id,
+                "miner_uid": miner_uid,
+                "audio_file": file_reference,
+                "file_url": f"/api/v1/tts/audio/{task_id}_{miner_uid}"
+            }
+        else:
+            print(f"❌ Failed to process TTS audio upload for task {task_id}")
+            raise HTTPException(status_code=500, detail="Failed to process TTS audio upload")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error in upload_tts_audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload TTS audio: {str(e)}")
 
 @app.get("/api/v1/validator/tasks")
 async def get_tasks_for_validator(validator_uid: int = None):

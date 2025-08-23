@@ -47,6 +47,20 @@ class ResponseStatus(str, Enum):
 
 # Core Data Models
 @dataclass
+class TextContent:
+    """Text content for summarization and other text-based tasks"""
+    content_id: str
+    text: str
+    created_at: datetime
+    updated_at: datetime
+    source_language: str = "en"
+    detected_language: Optional[str] = None
+    language_confidence: Optional[float] = None
+    text_length: int = 0
+    word_count: int = 0
+    metadata: Optional[Dict[str, Any]] = None
+
+@dataclass
 class FileReference:
     """Reference to a file stored in the system"""
     file_id: str
@@ -115,8 +129,9 @@ class TaskModel:
     created_at: datetime
     updated_at: datetime
     
-    # Input/Output files
-    input_file: FileReference
+    # Input/Output - can be either file-based or text-based
+    input_file: Optional[FileReference] = None
+    input_text: Optional[TextContent] = None
     output_file: Optional[FileReference] = None
     
     # Task details
@@ -148,6 +163,7 @@ class TaskModel:
 COLLECTIONS = {
     'tasks': 'tasks',
     'files': 'files',
+    'text_content': 'text_content',
     'miners': 'miners',
     'miner_status': 'miner_status',
     'assignments': 'task_assignments',
@@ -183,10 +199,18 @@ def generate_file_id() -> str:
     """Generate a unique file ID"""
     return str(uuid.uuid4())
 
+def generate_text_content_id() -> str:
+    """Generate a unique text content ID"""
+    return str(uuid.uuid4())
+
 def validate_task_data(task_data: Dict[str, Any]) -> bool:
     """Validate task data structure"""
-    required_fields = ['task_type', 'input_file', 'priority']
-    return all(field in task_data for field in required_fields)
+    required_fields = ['task_type', 'priority']
+    
+    # Must have either input_file or input_text
+    has_input = 'input_file' in task_data or 'input_text' in task_data
+    
+    return all(field in task_data for field in required_fields) and has_input
 
 def calculate_task_score(accuracy: float, speed: float, processing_time: float) -> float:
     """Calculate overall task score"""
@@ -266,6 +290,19 @@ class DatabaseOperations:
             return []
     
     @staticmethod
+    def get_task(db, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific task by ID"""
+        try:
+            doc = db.collection(COLLECTIONS['tasks']).document(task_id).get()
+            if doc.exists:
+                return doc.to_dict()
+            else:
+                return None
+        except Exception as e:
+            print(f"❌ Error getting task {task_id}: {e}")
+            return None
+    
+    @staticmethod
     def get_miner_tasks(db, miner_uid: int, status: Optional[TaskStatus] = None) -> List[Dict[str, Any]]:
         """Get tasks assigned to a specific miner with proper status filtering"""
         try:
@@ -312,6 +349,69 @@ class DatabaseOperations:
             return True
         except Exception as e:
             print(f"❌ Error updating task status: {e}")
+            return False
+    
+    @staticmethod
+    def get_available_miners(db, task_type: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get available miners that can process tasks"""
+        try:
+            query = db.collection(COLLECTIONS['miners'])
+            
+            # Filter by availability
+            query = query.where('is_serving', '==', True)
+            
+            # If task type is specified, filter by specialization
+            if task_type:
+                query = query.where('task_type_specialization', 'in', [task_type, None, ''])
+            
+            # Limit results
+            query = query.limit(limit)
+            
+            docs = query.stream()
+            miners = []
+            
+            for doc in docs:
+                miner_data = doc.to_dict()
+                # Only include miners with reasonable load
+                if miner_data.get('current_load', 0) < miner_data.get('max_capacity', 100):
+                    miners.append(miner_data)
+            
+            print(f"🔍 Found {len(miners)} available miners for task type '{task_type or 'any'}'")
+            return miners
+            
+        except Exception as e:
+            print(f"❌ Error getting available miners: {e}")
+            return []
+    
+    @staticmethod
+    def auto_assign_task(db, task_id: str, task_type: str, required_count: int = 3) -> bool:
+        """Automatically assign a task to available miners"""
+        try:
+            # Get available miners for this task type
+            available_miners = DatabaseOperations.get_available_miners(db, task_type, limit=required_count * 2)
+            
+            if not available_miners:
+                print(f"⚠️ No available miners found for task {task_id}")
+                return False
+            
+            # Select miners (take first required_count or all available if fewer)
+            selected_miners = available_miners[:required_count]
+            miner_uids = [miner['uid'] for miner in selected_miners]
+            
+            print(f"🎯 Auto-assigning task {task_id} to {len(miner_uids)} miners: {miner_uids}")
+            
+            # Assign the task
+            success = DatabaseOperations.assign_task_to_miners(db, task_id, miner_uids)
+            
+            if success:
+                print(f"✅ Successfully auto-assigned task {task_id} to miners {miner_uids}")
+            else:
+                print(f"❌ Failed to auto-assign task {task_id}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"❌ Error auto-assigning task {task_id}: {e}")
             return False
     
     @staticmethod
