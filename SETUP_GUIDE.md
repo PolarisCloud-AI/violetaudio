@@ -1,3 +1,4 @@
+ miner-fixes
 # Audio Processing Subnet Setup Guide
 
 This guide will help you set up and test the audio processing Bittensor subnet with transcription, TTS, and summarization capabilities.
@@ -328,15 +329,4 @@ pipeline = TranscriptionPipeline("openai/whisper-tiny")  # 39MB vs 1.5GB for lar
 - **Issues**: Report bugs on GitHub
 - **Discord**: Join Bittensor Discord for community support
 - **Documentation**: Check [AUDIO_SUBNET_README.md](AUDIO_SUBNET_README.md) for detailed information
-
-
-
-
-
-
-
-
-
-
-
 

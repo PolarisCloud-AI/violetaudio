@@ -5,7 +5,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
 ---
-
 ## The Incentivized Internet <!-- omit in toc -->
 
 [Discord](https://discord.gg/bittensor) • [Network](https://taostats.io/) • [Research](https://bittensor.com/whitepaper)
@@ -375,5 +374,5 @@ For support and questions:
 - **API Docs**: Visit `http://localhost:8000/docs` when proxy server is running
 
 ---
-
 **🎉 Happy Mining and Validating! This subnet is production-ready with a sophisticated proxy server architecture that handles the complete workflow from task submission to final result delivery!**
+=======
