@@ -1,29 +1,5 @@
 {
-  "1": {
-    "uid": 1,
-    "hotkey": "hotkey1",
-    "stake": 1000.0,
-    "total_tasks": 2,
-    "successful_tasks": 2,
-    "failed_tasks": 0,
-    "total_processing_time": 3.8,
-    "average_processing_time": 1.9,
-    "recent_response_times": [
-      2.0,
-      1.8
-    ],
-    "recent_success_rate": 1.0,
-    "current_load": 0,
-    "max_concurrent_tasks": 5,
-    "task_type_performance": {
-      "transcription": {
-        "total": 2,
-        "successful": 2,
-        "avg_time": 1.9,
-        "success_rate": 1.0
-      }
-    },
-    "last_seen": 1755721641.304425,
-    "first_seen": 1755721641.304399
-  }
-}
+  "48": {
+    "uid": 48,
+    "hotkey": "5Gxwzb9gKBCE2a4Qb6VDfUSabKMRZt9AKWw4VrPWZnuUWAsw",
+    "stake": 

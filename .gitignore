@@ -3,6 +3,31 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Project-specific exclusions
+logs/
+
+# Ignore generated JSON files (logs, metrics, etc.)
+logs/**/*.json
+*.metrics.json
+*.performance.json
+miner_metrics.json
+proxy_server/db/*.json
+# Ignore any other generated JSON files
+*.data.json
+*.config.json
+
+# Ignore audio files
+*.wav
+
+# Ignore temporary text files but keep important ones
+*.tmp.txt
+*.log.txt
+
+# Ignore proxy server generated directories
+proxy_server/db/
+proxy_server/local_storage/
+proxy_server/proxy_server/
+
 # C extensions
 *.so
 
@@ -60,6 +85,20 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Additional project exclusions
+*.db
+*.sqlite
+*.sqlite3
+.env.local
+.env.production
+
+# Logs and temporary files
+logs/
+*.log.*
+*.tmp
+*.temp
+*.cache
 
 # Flask stuff:
 instance/
@@ -163,3 +202,58 @@ testing/
 
 # Editors
 .vscode/settings.json
+
+# Bittensor Subnet Specific Exclusions
+# Logs and performance data
+logs/
+*.log
+performance_*.json
+miner_metrics.json
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Distribution and build files
+build/
+dist/
+*.egg-info/
+bittensor_subnet_template.egg-info/
+
+# Environment and dependencies
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.dependencies_installed
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary and cache files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Wandb (Weights & Biases) logs
+wandb/
+
+# Test outputs and temporary files
+testing/
+.coverage
+.pytest_cache/

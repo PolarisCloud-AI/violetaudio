@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-08-22T19:11:51.217160",
+  "event": "task_completion",
+  "task_id": "d64e7cc3-6f9e-4ed7-bf44-3edc520f08d0",
+  "task_type": "transcription",
+  "miner_uid": 48,
+  "processing_time": 0.00013399124145507812,
+  "success": false,
+  "result_summary": {
+    "task_type": "transcription",
+    "has_error": true,
+    "output_size": 0,
+    "confidence": 0.0
+  },
+  "error": "Task d64e7cc3-6f9e-4ed7-bf44-3edc520f08d0 failed to produce valid result: {'transcript': '', 'confidence': 0.0, 'processing_time': 0.0, 'language': 'en', 'error': 'Audio data is empty'}"
+}

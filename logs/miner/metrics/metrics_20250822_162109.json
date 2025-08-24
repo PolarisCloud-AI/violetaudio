@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-08-22T16:21:09.642049",
+  "total_responses": 2,
+  "successful_responses": 1,
+  "failed_responses": 1,
+  "success_rate": 50.0,
+  "total_processing_time": 3.5,
+  "average_processing_time": 1.75
+}

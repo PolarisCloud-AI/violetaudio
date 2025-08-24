@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-08-22T19:28:40.467542",
+  "event": "task_completion",
+  "task_id": "36fc63c3-c534-4b36-975a-00898418abc0",
+  "task_type": "transcription",
+  "miner_uid": 48,
+  "processing_time": 0.9809229373931885,
+  "success": true,
+  "result_summary": {
+    "task_type": "transcription",
+    "has_error": false,
+    "output_size": 116,
+    "confidence": 0.95
+  },
+  "error": null
+}

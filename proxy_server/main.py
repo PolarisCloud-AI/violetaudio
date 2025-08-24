@@ -407,6 +407,7 @@ async def startup_event():
         print("   POST /api/v1/validator/distribute - Distribute tasks to validator")
         print("   POST /api/v1/validator/submit_result - Submit task results from validator")
         print("   GET  /api/v1/task/{task_id}/result - Get task result for user")
+        print("   GET  /api/v1/task/{task_id}/responses - Get all task responses and best response")
         
     except Exception as e:
         print(f"❌ Error during startup: {str(e)}")
@@ -586,6 +587,100 @@ async def get_task_status(task_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+
+@app.get("/api/v1/task/{task_id}/responses")
+async def get_task_responses(task_id: str):
+    """Get task information including best response and input details (filtered for client use)"""
+    try:
+        print(f"🔍 Getting filtered task responses for task: {task_id}")
+        
+        # Get task from storage
+        task_data = task_storage.get_task_status(task_id)
+        if not task_data:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Extract best response
+        best_response = task_data.get('best_response', {})
+        
+        # Format standardized response data based on task type
+        task_type = task_data.get('task_type')
+        
+        if task_type == 'transcription':
+            # Standardized transcription response format
+            response_data = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": task_data.get('status'),
+                "created_at": task_data.get('submitted_at'),
+                "best_response": {
+                    "output_data": best_response.get('response_data', {}).get('output_data', {}) if best_response else {},
+                    "processing_time": best_response.get('processing_time', 0) if best_response else 0,
+                    "accuracy_score": best_response.get('accuracy_score', 0) if best_response else 0,
+                    "speed_score": best_response.get('speed_score', 0) if best_response else 0
+                } if best_response else None,
+                "task_summary": {
+                    "total_responses_received": len(task_data.get('miner_responses', [])) if isinstance(task_data.get('miner_responses', []), list) else 0,
+                    "required_miner_count": task_data.get('required_miner_count', 1),
+                    "task_priority": task_data.get('priority', 'normal')
+                }
+            }
+        else:
+            # Fallback format for other task types
+            response_data = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": task_data.get('status'),
+                "created_at": task_data.get('submitted_at'),
+                "best_response": {
+                    "response_data": best_response.get('response_data'),
+                    "processing_time": best_response.get('processing_time'),
+                    "accuracy_score": best_response.get('accuracy_score'),
+                    "speed_score": best_response.get('speed_score'),
+                    "submitted_at": best_response.get('submitted_at')
+                } if best_response else None,
+                "task_summary": {
+                    "total_responses_received": len(task_data.get('miner_responses', [])) if isinstance(task_data.get('miner_responses', []), list) else 0,
+                    "required_miner_count": task_data.get('required_miner_count', 1),
+                    "task_priority": task_data.get('priority', 'normal')
+                }
+            }
+        
+        print(f"✅ Retrieved filtered task information for task {task_id}")
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting task responses: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get task responses: {str(e)}")
+
+@app.get("/api/v1/tasks/completed")
+async def get_completed_tasks():
+    """Get all completed tasks for validator evaluation"""
+    try:
+        print(f"🔍 Getting completed tasks for validator evaluation")
+        
+        # Get all completed tasks from database
+        tasks_ref = db_manager.get_db().collection('tasks')
+        completed_tasks = tasks_ref.where('status', '==', 'completed').stream()
+        
+        tasks = []
+        for task_doc in completed_tasks:
+            task_data = task_doc.to_dict()
+            task_data['task_id'] = task_doc.id
+            
+            # Ensure miner_responses is included for evaluation
+            if 'miner_responses' not in task_doc:
+                task_data['miner_responses'] = []
+            
+            tasks.append(task_data)
+        
+        print(f"✅ Retrieved {len(tasks)} completed tasks for validator evaluation")
+        return tasks
+        
+    except Exception as e:
+        print(f"❌ Error getting completed tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get completed tasks: {str(e)}")
 
 @app.get("/api/v1/tasks", response_model=List[Dict])
 async def list_tasks(status: Optional[TaskStatus] = None, limit: int = 100):

@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-08-22T16:21:09.637084",
+  "event": "task_start",
+  "task_id": "test_task_001",
+  "task_type": "transcription",
+  "miner_uid": 123,
+  "input_size": 1024
+}
