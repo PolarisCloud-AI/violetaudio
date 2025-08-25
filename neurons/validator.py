@@ -144,6 +144,15 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.error(f"❌ Failed to initialize summarization pipeline: {e}")
                 self.summarization_pipeline = None
             
+            # Initialize translation pipeline (same as miner)
+            try:
+                from template.pipelines.translation_pipeline import translation_pipeline
+                self.translation_pipeline = translation_pipeline
+                bt.logging.info("✅ Translation pipeline initialized (same as miner)")
+            except Exception as e:
+                bt.logging.error(f"❌ Failed to initialize translation pipeline: {e}")
+                self.translation_pipeline = None
+            
             bt.logging.info("🎯 Miner pipelines initialization complete - validator now uses EXACTLY the same pipelines!")
             
         except Exception as e:
@@ -1087,14 +1096,15 @@ class Validator(BaseValidatorNeuron):
         Enhanced main method for evaluating completed tasks and setting miner weights.
         This method:
         1. Tests proxy server connection
-        2. Fetches completed tasks from proxy server
-        3. Filters out already evaluated tasks
-        4. Executes each task as a miner would
-        5. Compares validator results with miner results
-        6. Calculates scores and ranks for each miner
-        7. Sets weights based on cumulative performance
-        8. Generates comprehensive performance reports
-        9. Tracks evaluation history and performance metrics
+        2. Reports current miner status to proxy server
+        3. Fetches completed tasks from proxy server
+        4. Filters out already evaluated tasks
+        5. Executes each task as a miner would
+        6. Compares validator results with miner results
+        7. Calculates scores and ranks for each miner
+        8. Sets weights based on cumulative performance
+        9. Generates comprehensive performance reports
+        10. Tracks evaluation history and performance metrics
         """
         try:
             start_time = time.time()
@@ -1111,6 +1121,14 @@ class Validator(BaseValidatorNeuron):
                 return
             
             bt.logging.info("✅ Proxy server connection test successful, proceeding with evaluation")
+            
+            # CRITICAL FIX: Report current miner status to proxy server
+            bt.logging.info("📊 Reporting current miner status to proxy server...")
+            try:
+                await self.report_miner_status_to_proxy()
+                bt.logging.info("✅ Miner status reported to proxy server")
+            except Exception as e:
+                bt.logging.warning(f"⚠️ Failed to report miner status: {e}")
             
             # Fetch completed tasks from proxy server
             completed_tasks = await self.fetch_completed_tasks_from_proxy()
@@ -1241,13 +1259,17 @@ class Validator(BaseValidatorNeuron):
                         bt.logging.warning(f"⚠️ Miner response {i+1} missing miner_uid")
                         validation_passed = False
                     
+                    # CRITICAL FIX: Make processing_time optional (some miners might not provide it)
                     if response.get('processing_time') is None:
-                        bt.logging.warning(f"⚠️ Miner response {i+1} missing processing_time")
-                        validation_passed = False
+                        bt.logging.warning(f"⚠️ Miner response {i+1} missing processing_time, using default")
+                        # Set a default processing time
+                        response['processing_time'] = 10.0
                     
+                    # CRITICAL FIX: Make submitted_at optional (some miners might not provide it)
                     if response.get('submitted_at') is None:
-                        bt.logging.warning(f"⚠️ Miner response {i+1} missing submitted_at")
-                        validation_passed = False
+                        bt.logging.warning(f"⚠️ Miner response {i+1} missing submitted_at, using current time")
+                        # Set a default submission time
+                        response['submitted_at'] = datetime.now().isoformat()
                 
                 if not validation_passed:
                     bt.logging.error(f"❌ Task {task_id} failed validation. Skipping evaluation.")
@@ -1264,6 +1286,10 @@ class Validator(BaseValidatorNeuron):
                 if task.get('input_data'):
                     bt.logging.info(f"   ✅ input_data field found")
                     input_data_available = True
+                elif task.get('input_text') and isinstance(task.get('input_text'), dict):
+                    if task['input_text'].get('text'):
+                        bt.logging.info(f"   ✅ input_text.text field found")
+                        input_data_available = True
                 elif task.get('input_file_id'):
                     bt.logging.info(f"   ✅ input_file_id field found")
                     input_data_available = True
@@ -1294,12 +1320,37 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.info(f"   Pipeline: {self._get_pipeline_name(task_type)}")
                 bt.logging.info(f"   Pipeline Description: {self._get_pipeline_description(task_type)}")
                 
+                # CRITICAL FIX: Extract actual input data for task execution
+                task_input_data = None
+                if task.get('input_data'):
+                    task_input_data = task['input_data']
+                elif task.get('input_text') and isinstance(task.get('input_text'), dict):
+                    task_input_data = task['input_text'].get('text', '')
+                elif task.get('input_file') and isinstance(task.get('input_file'), dict):
+                    # For file-based tasks, we'll need to download the file
+                    file_id = task['input_file'].get('file_id')
+                    if file_id:
+                        bt.logging.info(f"   📥 Downloading file content for execution: {file_id}")
+                        task_input_data = await self._download_and_extract_file_content(file_id)
+                
+                if not task_input_data:
+                    bt.logging.error(f"❌ Failed to extract input data for task execution")
+                    bt.logging.info("=" * 80)
+                    continue
+                
+                bt.logging.info(f"   ✅ Extracted input data: {len(str(task_input_data))} chars")
+                
                 # Log pipeline execution details
                 pipeline_info = {
                     'transcription': {
                         'input_format': 'Audio data (base64 encoded)',
                         'output_format': 'Transcribed text with confidence',
                         'key_metrics': 'Accuracy, processing time, language detection'
+                    },
+                    'video_transcription': {
+                        'input_format': 'Video file (MP4, AVI, etc.)',
+                        'output_format': 'Transcribed text with timestamps',
+                        'key_metrics': 'Accuracy, processing time, timestamp accuracy'
                     },
                     'tts': {
                         'input_format': 'Text data',
@@ -1310,6 +1361,16 @@ class Validator(BaseValidatorNeuron):
                         'input_format': 'Long text data',
                         'output_format': 'Summarized text with key points',
                         'key_metrics': 'Summary quality, processing time, key point extraction'
+                    },
+                    'text_translation': {
+                        'input_format': 'Text data in source language',
+                        'output_format': 'Translated text in target language',
+                        'key_metrics': 'Translation accuracy, language handling, processing time'
+                    },
+                    'document_translation': {
+                        'input_format': 'Document file (PDF, DOCX, TXT)',
+                        'output_format': 'Translated document content',
+                        'key_metrics': 'Translation accuracy, document format preservation, processing time'
                     }
                 }
                 
@@ -1320,7 +1381,11 @@ class Validator(BaseValidatorNeuron):
                     bt.logging.info(f"      Output Format: {info['output_format']}")
                     bt.logging.info(f"      Key Metrics: {info['key_metrics']}")
                 
-                validator_result = await self.execute_task_as_validator(task)
+                # CRITICAL FIX: Create a modified task with the extracted input data
+                modified_task = task.copy()
+                modified_task['input_data'] = task_input_data
+                
+                validator_result = await self.execute_task_as_validator(modified_task)
                 if not validator_result:
                     bt.logging.error(f"❌ Failed to execute task {task_id} as validator")
                     bt.logging.info("=" * 80)
@@ -1653,6 +1718,15 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.error(f"❌ Task {task_id} - Failed to extract input data")
                 return None
             
+            # For file-based tasks, input_data might be a file ID that needs downloading
+            if isinstance(input_data, str) and len(input_data) < 100 and not input_data.startswith('data:'):
+                # This might be a file ID, try to download the actual content
+                bt.logging.info(f"      🔄 Attempting to download file content for ID: {input_data}")
+                downloaded_content = await self._download_and_extract_file_content(input_data)
+                if downloaded_content:
+                    input_data = downloaded_content
+                    bt.logging.info(f"      ✅ Successfully downloaded file content: {len(input_data)} chars")
+            
             # ENHANCED: Validate input data using same checks as miner
             validation_result = await self._validate_input_data_robust(input_data, task_type, task_id)
             if not validation_result['valid']:
@@ -1681,51 +1755,58 @@ class Validator(BaseValidatorNeuron):
     async def _extract_input_data_robust(self, task: Dict, task_id: str) -> Optional[Any]:
         """
         ENHANCED: Extract input data using the same robust pattern as miner.
-        Handles multiple possible field names and formats consistently.
+        Prioritizes text input for summarization and translation tasks.
         """
         try:
             bt.logging.info(f"   🔍 EXTRACTING INPUT DATA (ROBUST METHOD):")
             
-            # CRITICAL FIX: The proxy server already provides processed input_data
-            # We should use this directly instead of trying to extract file IDs
+            # PRIORITY 1: Handle input_text for summarization and translation tasks
+            if "input_text" in task and isinstance(task["input_text"], dict):
+                if "text" in task["input_text"]:
+                    input_data = task["input_text"]["text"]
+                    bt.logging.info(f"      ✅ Found input_text.text: {len(str(input_data))} chars")
+                    return input_data
+            
+            # PRIORITY 2: The proxy server already provides processed input_data
             if "input_data" in task and task["input_data"]:
                 input_data = task["input_data"]
                 bt.logging.info(f"      ✅ Found input_data directly: {len(str(input_data))} chars")
                 return input_data
             
-            # Fallback: Try multiple possible field names (same as miner)
-            possible_fields = [
-                "input_file_id",        # File ID field
-                "input_file",           # Object field
-                "file_id",              # Alternative field name
-                "audio_file_id",        # Audio-specific field
-                "input_data_id"         # Another alternative
-            ]
+            # PRIORITY 3: Handle file-based tasks (transcription, video_transcription)
+            # Only download files for actual file-based tasks, not for text-based tasks
+            task_type = task.get("task_type", "")
+            if task_type in ["transcription", "video_transcription"]:
+                if "input_file" in task and isinstance(task["input_file"], dict):
+                    if "file_id" in task["input_file"]:
+                        file_id = task["input_file"]["file_id"]
+                        bt.logging.info(f"      ✅ Found input_file.file_id: {file_id}")
+                        # Download and extract file content
+                        return await self._download_and_extract_file_content(file_id)
+                
+                # Fallback: Try multiple possible field names for file-based tasks
+                possible_fields = [
+                    "input_file_id",        # File ID field
+                    "file_id",              # Alternative field name
+                    "audio_file_id",        # Audio-specific field
+                    "input_data_id"         # Another alternative
+                ]
+                
+                for field in possible_fields:
+                    if field in task:
+                        field_value = task[field]
+                        if isinstance(field_value, str) and field_value:
+                            bt.logging.info(f"      ✅ Found input_file_id in field '{field}': {field_value}")
+                            # Download and extract file content
+                            return await self._download_and_extract_file_content(field_value)
             
-            input_data = None
-            for field in possible_fields:
-                if field in task:
-                    field_value = task[field]
-                    if isinstance(field_value, str) and field_value:
-                        input_data = field_value
-                        bt.logging.info(f"      ✅ Found input_file_id in field '{field}': {input_data}")
-                        break
-                    elif isinstance(field_value, dict) and field_value.get('file_id'):
-                        input_data = field_value['file_id']
-                        bt.logging.info(f"      ✅ Found input_file_id in field '{field}.file_id': {input_data}")
-                        break
-            
-            # If still no input_data, try to extract from nested structures (same as miner)
-            if not input_data:
+            # PRIORITY 4: For text-based tasks, look for any text content
+            if task_type in ["summarization", "text_translation", "document_translation"]:
+                # Look for any text content in the task
                 for key, value in task.items():
-                    if isinstance(value, dict) and 'file_id' in value:
-                        input_data = value['file_id']
-                        bt.logging.info(f"      ✅ Found input_file_id in nested field '{key}.file_id': {input_data}")
-                        break
-                    elif isinstance(value, dict) and 'input_file_id' in value:
-                        input_data = value['input_file_id']
-                        bt.logging.info(f"      ✅ Found input_file_id in nested field '{key}.input_file_id': {input_data}")
-                        break
+                    if isinstance(value, str) and len(value) > 10:  # Reasonable text length
+                        bt.logging.info(f"      ✅ Found text content in field '{key}': {len(value)} chars")
+                        return value
             
             if input_data:
                 bt.logging.info(f"      ✅ Successfully extracted input data: {len(str(input_data))} chars")
@@ -1740,7 +1821,7 @@ class Validator(BaseValidatorNeuron):
         except Exception as e:
             bt.logging.error(f"❌ Error extracting input data: {str(e)}")
             return None
-
+            
     async def _validate_input_data_robust(self, input_data: Any, task_type: str, task_id: str) -> Dict:
         """
         ENHANCED: Validate input data using the same checks as miner.
@@ -1778,16 +1859,16 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.warning(f"      ⚠️ Empty input data detected")
                 return validation_result
             
-            # Check for suspiciously small files (same as miner)
-            if validation_result['data_size'] < 100:  # Less than 100 chars/bytes is suspicious
+            # Check for suspiciously small files (same as miner) - LESS RESTRICTIVE
+            if validation_result['data_size'] < 10:  # Less than 10 chars/bytes is suspicious
                 validation_result['reason'] = f'Input data is suspiciously small ({validation_result["data_size"]} chars/bytes)'
                 bt.logging.warning(f"      ⚠️ Suspiciously small input data detected")
                 return validation_result
             
             # Type-specific validation (same as miner)
-            if task_type == "transcription":
+            if task_type in ["transcription", "video_transcription"]:
                 if not isinstance(input_data, str):
-                    validation_result['reason'] = f'Transcription expects base64 string, got {type(input_data)}'
+                    validation_result['reason'] = f'{task_type.capitalize()} expects base64 string, got {type(input_data)}'
                     return validation_result
                 # Validate base64 format
                 try:
@@ -1806,6 +1887,14 @@ class Validator(BaseValidatorNeuron):
                     validation_result['reason'] = f'{task_type.capitalize()} text too short (min 10 chars)'
                     return validation_result
             
+            elif task_type in ["text_translation", "document_translation"]:
+                if not isinstance(input_data, str):
+                    validation_result['reason'] = f'{task_type.capitalize()} expects string input, got {type(input_data)}'
+                    return validation_result
+                if len(input_data.strip()) < 10:
+                    validation_result['reason'] = f'{task_type.capitalize()} input too short (min 10 chars)'
+                    return validation_result
+            
             validation_result['valid'] = True
             bt.logging.info(f"      ✅ Input data validation passed")
             return validation_result
@@ -1813,6 +1902,32 @@ class Validator(BaseValidatorNeuron):
         except Exception as e:
             bt.logging.error(f"❌ Error validating input data: {str(e)}")
             return {'valid': False, 'reason': f'Validation error: {str(e)}'}
+
+    async def _download_and_extract_file_content(self, file_id: str) -> Optional[str]:
+        """
+        Download file content from proxy server and extract text content.
+        """
+        try:
+            bt.logging.info(f"      📥 Downloading file content from proxy server: {file_id}")
+            
+            # Download file from proxy server
+            download_url = f"{self.proxy_server_url}/api/v1/files/{file_id}/download"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(download_url, timeout=30.0)
+                
+                if response.status_code == 200:
+                    file_content = response.content
+                    bt.logging.info(f"      ✅ Downloaded file: {len(file_content)} bytes")
+                    
+                    # For now, return the content as string (can be enhanced later)
+                    return file_content.decode('utf-8', errors='ignore')
+                else:
+                    bt.logging.error(f"      ❌ Failed to download file: {response.status_code}")
+                    return None
+                    
+        except Exception as e:
+            bt.logging.error(f"      ❌ Error downloading file content: {str(e)}")
+            return None
 
     async def _execute_pipeline_robust(self, task_type: str, input_data: Any, task_id: str) -> Optional[Dict]:
         """
@@ -1835,12 +1950,21 @@ class Validator(BaseValidatorNeuron):
             if task_type == 'transcription':
                 bt.logging.info(f"      🎵 Executing TRANSCRIPTION pipeline...")
                 result = await self.execute_transcription_task({'input_data': input_data, 'task_id': task_id})
+            elif task_type == 'video_transcription':
+                bt.logging.info(f"      🎬 Executing VIDEO TRANSCRIPTION pipeline...")
+                result = await self.execute_video_transcription_task({'input_data': input_data, 'task_id': task_id})
             elif task_type == 'tts':
                 bt.logging.info(f"      🔊 Executing TTS pipeline...")
                 result = await self.execute_tts_task({'input_data': input_data, 'task_id': task_id})
             elif task_type == 'summarization':
                 bt.logging.info(f"      📝 Executing SUMMARIZATION pipeline...")
                 result = await self.execute_summarization_task({'input_data': input_data, 'task_id': task_id})
+            elif task_type == 'text_translation':
+                bt.logging.info(f"      🌐 Executing TEXT TRANSLATION pipeline...")
+                result = await self.execute_text_translation_task({'input_data': input_data, 'task_id': task_id})
+            elif task_type == 'document_translation':
+                bt.logging.info(f"      📄 Executing DOCUMENT TRANSLATION pipeline...")
+                result = await self.execute_document_translation_task({'input_data': input_data, 'task_id': task_id})
             else:
                 bt.logging.error(f"      ❌ Unknown task type: {task_type}")
                 return None
@@ -1865,7 +1989,7 @@ class Validator(BaseValidatorNeuron):
         ENHANCED: Check pipeline availability using the same logic as miner.
         """
         try:
-            if task_type == "transcription":
+            if task_type in ["transcription", "video_transcription"]:
                 if self.transcription_pipeline is None:
                     return {'available': False, 'reason': 'Transcription pipeline not available'}
             elif task_type == "tts":
@@ -1874,6 +1998,9 @@ class Validator(BaseValidatorNeuron):
             elif task_type == "summarization":
                 if self.summarization_pipeline is None:
                     return {'available': False, 'reason': 'Summarization pipeline not available'}
+            elif task_type in ["text_translation", "document_translation"]:
+                if self.translation_pipeline is None:
+                    return {'available': False, 'reason': 'Translation pipeline not available'}
             
             return {'available': True, 'reason': 'Pipeline available'}
             
@@ -1905,7 +2032,7 @@ class Validator(BaseValidatorNeuron):
                 summary = output_data['summary']
                 bt.logging.info(f"      Output: Summary ({len(summary)} chars)")
                 bt.logging.debug(f"      Summary Preview: {summary[:100]}...")
-            
+                
         except Exception as e:
             bt.logging.error(f"❌ Error logging task execution result: {str(e)}")
 
@@ -2080,7 +2207,7 @@ class Validator(BaseValidatorNeuron):
             return None
 
     async def execute_summarization_task(self, task: Dict) -> Dict:
-        """Execute summarization task as validator using the SAME pipeline as miners"""
+        """Execute summarization task as validator using the SAME pipeline as miners with language support"""
         try:
             bt.logging.info(f"🔧 EXECUTING SUMMARIZATION TASK AS VALIDATOR (ENHANCED)")
             bt.logging.info(f"   Using: {self._get_pipeline_name('summarization')}")
@@ -2090,15 +2217,38 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.error("❌ Summarization pipeline not available (same as miner)")
                 return None
             
-            # ENHANCED: Get input text with robust extraction
-            input_text = task.get('input_data')
+            # ENHANCED: Get input data with robust extraction
+            input_data = task.get('input_data')
+            if not input_data:
+                bt.logging.warning("⚠️ No input data found for summarization task")
+                return None
+            
+            # Handle both string and dictionary input formats
+            if isinstance(input_data, str):
+                # Legacy format - direct text
+                input_text = input_data
+                source_language = task.get('language', 'en')
+                detected_language = source_language
+                language_confidence = 1.0
+            elif isinstance(input_data, dict):
+                # New format with language information
+                input_text = input_data.get('text', '')
+                source_language = input_data.get('source_language', 'en')
+                detected_language = input_data.get('detected_language', source_language)
+                language_confidence = input_data.get('language_confidence', 1.0)
+            else:
+                bt.logging.error(f"❌ Invalid input data type: expected string or dict, got {type(input_data)}")
+                return None
+            
             if not input_text:
                 bt.logging.warning("⚠️ No input text found for summarization task")
                 return None
             
             bt.logging.info(f"   🔍 Processing input text...")
             bt.logging.info(f"      Text Length: {len(input_text)} characters")
-            bt.logging.info(f"      Language: {task.get('language', 'en')}")
+            bt.logging.info(f"      Source Language: {source_language}")
+            bt.logging.info(f"      Detected Language: {detected_language}")
+            bt.logging.info(f"      Language Confidence: {language_confidence}")
             
             # ENHANCED: Validate input text (same validation as miner)
             if not isinstance(input_text, str):
@@ -2117,9 +2267,12 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"   📝 Starting text summarization (same as miner)...")
             start_time = time.time()
             
-            # Use the same pipeline call as miner
+            # Use the source language directly since user specified it (same logic as miner)
+            processing_language = source_language
+            
+            # Use the same pipeline call as miner with language support
             summary_text, processing_time = self.summarization_pipeline.summarize(
-                input_text, language="en"  # Same parameters as miner
+                input_text, language=processing_language
             )
             
             total_time = time.time() - start_time
@@ -2129,14 +2282,21 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"   Total Execution Time: {total_time:.3f}s")
             bt.logging.info(f"   Summary Length: {len(summary_text)} characters")
             bt.logging.info(f"   Word Count: {len(summary_text.split())} words")
+            bt.logging.info(f"   Processing Language: {processing_language}")
             
-            # ENHANCED: Return result in the same format as miner
+            # ENHANCED: Return result in the same format as miner with language info
             result = {
                 'output_data': {
                     'summary': summary_text,
                     'processing_time': processing_time,
                     'text_length': len(input_text),
-                    'language': 'en'
+                    'source_language': source_language,
+                    'detected_language': detected_language,
+                    'language_confidence': language_confidence,
+                    'processing_language': processing_language,
+                    'word_count': len(input_text.split()),
+                    'summary_length': len(summary_text),
+                    'compression_ratio': len(summary_text) / max(len(input_text), 1)
                 },
                 'processing_time': processing_time,
                 'accuracy_score': 0.88,  # Same as miner
@@ -2149,6 +2309,278 @@ class Validator(BaseValidatorNeuron):
             
         except Exception as e:
             bt.logging.error(f"❌ Error executing summarization task: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def execute_video_transcription_task(self, task: Dict) -> Dict:
+        """Execute video transcription task as validator using the SAME pipeline as miners"""
+        try:
+            bt.logging.info(f"🔧 EXECUTING VIDEO TRANSCRIPTION TASK AS VALIDATOR (ENHANCED)")
+            bt.logging.info(f"   Using: {self._get_pipeline_name('transcription')}")
+            
+            # ENHANCED: Check if pipeline is available (same check as miner)
+            if self.transcription_pipeline is None:
+                bt.logging.error("❌ Transcription pipeline not available (same as miner)")
+                return None
+            
+            # ENHANCED: Check if video processing utilities are available
+            try:
+                from template.pipelines.video_utils import video_processor
+            except ImportError:
+                bt.logging.error("❌ Video processing utilities not available")
+                return None
+            
+            # ENHANCED: Get input data with robust extraction
+            input_data = task.get('input_data')
+            if not input_data:
+                bt.logging.warning("⚠️ No input data found for video transcription task")
+                return None
+            
+            # ENHANCED: Decode base64 input if needed (same as miner)
+            bt.logging.info(f"   🔍 Processing input data...")
+            import base64
+            try:
+                if isinstance(input_data, str):
+                    bt.logging.info(f"   📝 Decoding base64 input data...")
+                    video_bytes = base64.b64decode(input_data)
+                    bt.logging.info(f"   ✅ Decoded {len(video_bytes)} bytes of video data")
+                else:
+                    video_bytes = input_data
+                    bt.logging.info(f"   ✅ Using raw video data ({len(video_bytes)} bytes)")
+            except Exception as e:
+                bt.logging.error(f"❌ Failed to decode input data: {str(e)}")
+                return None
+            
+            # ENHANCED: Validate input data (same validation as miner)
+            if not isinstance(video_bytes, bytes):
+                bt.logging.error(f"❌ Invalid video data type: expected bytes, got {type(video_bytes)}")
+                return None
+            
+            if len(video_bytes) == 0:
+                bt.logging.error("❌ Video data is empty")
+                return None
+            
+            # Get task metadata
+            source_language = task.get('language', 'en')
+            filename = task.get('input_file', {}).get('file_name', 'unknown_video')
+            
+            bt.logging.info(f"🎬 Processing video: {filename}")
+            bt.logging.info(f"   Video size: {len(video_bytes)} bytes")
+            bt.logging.info(f"   Source language: {source_language}")
+            
+            # Extract audio from video using same method as miner
+            bt.logging.info(f"🔧 Extracting audio from video...")
+            audio_bytes, temp_audio_path = video_processor.extract_audio_from_video(
+                video_bytes, 
+                filename,
+                output_format="wav",
+                sample_rate=16000  # Whisper requirement
+            )
+            
+            bt.logging.info(f"✅ Audio extraction successful: {len(audio_bytes)} bytes")
+            
+            # Get video information for metadata
+            video_info = video_processor.get_video_info(video_bytes, filename)
+            bt.logging.info(f"📊 Video info: {video_info}")
+            
+            # Transcribe the extracted audio using same method as miner
+            bt.logging.info(f"🎵 Transcribing extracted audio...")
+            start_time = time.time()
+            transcribed_text, processing_time = self.transcription_pipeline.transcribe(
+                audio_bytes, language=source_language
+            )
+            total_time = time.time() - start_time
+            
+            bt.logging.info(f"✅ Video transcription completed (same as miner):")
+            bt.logging.info(f"   Audio Extraction: {len(audio_bytes)} bytes")
+            bt.logging.info(f"   Pipeline Processing Time: {processing_time:.3f}s")
+            bt.logging.info(f"   Total Execution Time: {total_time:.3f}s")
+            bt.logging.info(f"   Transcript Length: {len(transcribed_text)} characters")
+            bt.logging.info(f"   Word Count: {len(transcribed_text.split())} words")
+            
+            # ENHANCED: Return result in the same format as miner
+            result = {
+                'output_data': {
+                    'transcript': transcribed_text,
+                    'confidence': 0.95,  # Same mock confidence as miner
+                    'processing_time': processing_time,
+                    'language': source_language,
+                    'video_info': video_info,
+                    'audio_extraction_success': True,
+                    'audio_size_bytes': len(audio_bytes),
+                    'transcript_length': len(transcribed_text),
+                    'word_count': len(transcribed_text.split()),
+                    'source_language': source_language
+                },
+                'processing_time': processing_time,
+                'accuracy_score': 0.95,  # Use same confidence as accuracy
+                'speed_score': max(0.5, 1.0 - (processing_time / 10.0))
+            }
+            
+            bt.logging.info(f"✅ Video transcription task executed successfully using miner pipeline")
+            bt.logging.debug(f"   Transcript: {transcribed_text[:100]}...")
+            return result
+            
+        except Exception as e:
+            bt.logging.error(f"❌ Error executing video transcription task: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def execute_text_translation_task(self, task: Dict) -> Dict:
+        """Execute text translation task as validator using the SAME pipeline as miners"""
+        try:
+            bt.logging.info(f"🔧 EXECUTING TEXT TRANSLATION TASK AS VALIDATOR (ENHANCED)")
+            bt.logging.info(f"   Using: {self._get_pipeline_name('translation')}")
+            
+            # ENHANCED: Check if pipeline is available (same check as miner)
+            if self.translation_pipeline is None:
+                bt.logging.error("❌ Translation pipeline not available (same as miner)")
+                return None
+            
+            # ENHANCED: Get input data with robust extraction
+            input_text = task.get('input_text', {})
+            if not input_text or 'text' not in input_text:
+                bt.logging.warning("⚠️ No input text found for text translation task")
+                return None
+            
+            text = input_text.get('text', '')
+            source_language = input_text.get('source_language', 'en')
+            target_language = input_text.get('target_language', 'es')
+            
+            bt.logging.info(f"🌐 Processing text translation:")
+            bt.logging.info(f"   Text length: {len(text)} characters")
+            bt.logging.info(f"   From {source_language} to {target_language}")
+            
+            if not text:
+                bt.logging.error("❌ No text provided for translation")
+                return None
+            
+            # Process text translation using same method as miner
+            bt.logging.info(f"🎵 Translating text...")
+            start_time = time.time()
+            translated_text, processing_time = self.translation_pipeline.translate_text(
+                text, source_language, target_language
+            )
+            total_time = time.time() - start_time
+            
+            bt.logging.info(f"✅ Text translation completed (same as miner):")
+            bt.logging.info(f"   Pipeline Processing Time: {processing_time:.3f}s")
+            bt.logging.info(f"   Total Execution Time: {total_time:.3f}s")
+            bt.logging.info(f"   Original Length: {len(text)} characters")
+            bt.logging.info(f"   Translated Length: {len(translated_text)} characters")
+            
+            # ENHANCED: Return result in the same format as miner
+            result = {
+                'output_data': {
+                    'translated_text': translated_text,
+                    'source_language': source_language,
+                    'target_language': target_language,
+                    'processing_time': processing_time,
+                    'original_text_length': len(text),
+                    'translated_text_length': len(translated_text),
+                    'word_count': len(text.split()),
+                    'translated_word_count': len(translated_text.split())
+                },
+                'processing_time': processing_time,
+                'accuracy_score': 0.95,  # Use same confidence as accuracy
+                'speed_score': max(0.5, 1.0 - (processing_time / 10.0))
+            }
+            
+            bt.logging.info(f"✅ Text translation task executed successfully using miner pipeline")
+            bt.logging.debug(f"   Original: {text[:100]}...")
+            bt.logging.debug(f"   Translated: {translated_text[:100]}...")
+            return result
+            
+        except Exception as e:
+            bt.logging.error(f"❌ Error executing text translation task: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def execute_document_translation_task(self, task: Dict) -> Dict:
+        """Execute document translation task as validator using the SAME pipeline as miners"""
+        try:
+            bt.logging.info(f"🔧 EXECUTING DOCUMENT TRANSLATION TASK AS VALIDATOR (ENHANCED)")
+            bt.logging.info(f"   Using: {self._get_pipeline_name('translation')}")
+            
+            # ENHANCED: Check if pipeline is available (same check as miner)
+            if self.translation_pipeline is None:
+                bt.logging.error("❌ Translation pipeline not available (same as miner)")
+                return None
+            
+            # ENHANCED: Check if video processing utilities are available (for document processing)
+            try:
+                from template.pipelines.video_utils import video_processor
+            except ImportError:
+                bt.logging.error("❌ Video processing utilities not available")
+                return None
+            
+            # ENHANCED: Get input data with robust extraction
+            input_file = task.get('input_file', {})
+            if not input_file or 'file_id' not in input_file:
+                bt.logging.warning("⚠️ No input file found for document translation task")
+                return None
+            
+            # For document translation, we need to get the file content
+            # This would typically come from the proxy server
+            file_data = task.get('input_data')  # This should contain the file bytes
+            if not file_data:
+                bt.logging.warning("⚠️ No file data found for document translation task")
+                return None
+            
+            filename = input_file.get('file_name', 'unknown_document')
+            source_language = task.get('source_language', 'en')
+            target_language = task.get('target_language', 'es')
+            
+            bt.logging.info(f"📄 Processing document translation:")
+            bt.logging.info(f"   Filename: {filename}")
+            bt.logging.info(f"   File size: {len(file_data)} bytes")
+            bt.logging.info(f"   From {source_language} to {target_language}")
+            
+            if not file_data:
+                bt.logging.error("❌ No file data provided for document translation")
+                return None
+            
+            # Process document translation using same method as miner
+            bt.logging.info(f"🎵 Translating document...")
+            start_time = time.time()
+            translated_text, processing_time, metadata = self.translation_pipeline.translate_document(
+                file_data, filename, source_language, target_language
+            )
+            total_time = time.time() - start_time
+            
+            bt.logging.info(f"✅ Document translation completed (same as miner):")
+            bt.logging.info(f"   Pipeline Processing Time: {processing_time:.3f}s")
+            bt.logging.info(f"   Total Execution Time: {total_time:.3f}s")
+            bt.logging.info(f"   Original Length: {metadata.get('extracted_text_length', 0)} characters")
+            bt.logging.info(f"   Translated Length: {len(translated_text)} characters")
+            
+            # ENHANCED: Return result in the same format as miner
+            result = {
+                'output_data': {
+                    'translated_text': translated_text,
+                    'source_language': source_language,
+                    'target_language': target_language,
+                    'processing_time': processing_time,
+                    'original_filename': filename,
+                    'file_size_bytes': len(file_data),
+                    'translated_text_length': len(translated_text),
+                    'metadata': metadata
+                },
+                'processing_time': processing_time,
+                'accuracy_score': 0.95,  # Use same confidence as accuracy
+                'speed_score': max(0.5, 1.0 - (processing_time / 10.0))
+            }
+            
+            bt.logging.info(f"✅ Document translation task executed successfully using miner pipeline")
+            bt.logging.debug(f"   Original filename: {filename}")
+            bt.logging.debug(f"   Translated: {translated_text[:100]}...")
+            return result
+            
+        except Exception as e:
+            bt.logging.error(f"❌ Error executing document translation task: {str(e)}")
             import traceback
             traceback.print_exc()
             return None
@@ -2192,12 +2624,18 @@ class Validator(BaseValidatorNeuron):
                 if task_type == 'transcription':
                     # Transcription: accuracy is most important
                     weights = {'accuracy': 0.65, 'speed': 0.25, 'quality': 0.10}
+                elif task_type == 'video_transcription':
+                    # Video transcription: accuracy is most important
+                    weights = {'accuracy': 0.65, 'speed': 0.25, 'quality': 0.10}
                 elif task_type == 'tts':
                     # TTS: quality and accuracy are important
                     weights = {'accuracy': 0.50, 'speed': 0.20, 'quality': 0.30}
                 elif task_type == 'summarization':
                     # Summarization: accuracy and quality are important
                     weights = {'accuracy': 0.60, 'speed': 0.20, 'quality': 0.20}
+                elif task_type in ['text_translation', 'document_translation']:
+                    # Translation: accuracy is most important
+                    weights = {'accuracy': 0.70, 'speed': 0.20, 'quality': 0.10}
                 else:
                     # Default weights
                     weights = {'accuracy': 0.60, 'speed': 0.25, 'quality': 0.15}
@@ -2269,10 +2707,14 @@ class Validator(BaseValidatorNeuron):
         try:
             if task_type == 'transcription':
                 return await self.compare_transcription_results(validator_result, miner_response)
+            elif task_type == 'video_transcription':
+                return await self.compare_transcription_results(validator_result, miner_response)
             elif task_type == 'tts':
                 return await self.compare_tts_results(validator_result, miner_response)
             elif task_type == 'summarization':
                 return await self.compare_summarization_results(validator_result, miner_response)
+            elif task_type in ['text_translation', 'document_translation']:
+                return await self.compare_translation_results(validator_result, miner_response)
             else:
                 return 0.5  # Default score for unknown task types
                 
@@ -2283,11 +2725,24 @@ class Validator(BaseValidatorNeuron):
     async def compare_transcription_results(self, validator_result: Dict, miner_response: Dict) -> float:
         """Compare transcription results between validator and miner"""
         try:
-            # Extract transcriptions
+            # Extract transcriptions - handle multiple possible structures
             validator_transcript = validator_result.get('output_data', {}).get('transcript', '')
-            miner_transcript = miner_response.get('response_data', {}).get('output_data', '')
+            
+            # Try multiple possible paths for miner transcript
+            miner_transcript = None
+            if miner_response.get('response_data', {}).get('output_data'):
+                miner_transcript = miner_response['response_data']['output_data']
+            elif miner_response.get('output_data'):
+                miner_transcript = miner_response['output_data']
+            elif miner_response.get('transcript'):
+                miner_transcript = miner_response['transcript']
+            elif miner_response.get('text'):
+                miner_transcript = miner_response['text']
             
             if not validator_transcript or not miner_transcript:
+                bt.logging.warning(f"⚠️ Missing transcript data for comparison")
+                bt.logging.warning(f"   Validator: {len(str(validator_transcript))} chars")
+                bt.logging.warning(f"   Miner: {len(str(miner_transcript))} chars")
                 return 0.5
             
             # Simple text similarity (you can implement more sophisticated comparison)
@@ -2329,11 +2784,47 @@ class Validator(BaseValidatorNeuron):
     async def compare_summarization_results(self, validator_result: Dict, miner_response: Dict) -> float:
         """Compare summarization results between validator and miner"""
         try:
-            # Extract summaries
+            # Extract validator summary
             validator_summary = validator_result.get('output_data', {}).get('summary', '')
-            miner_summary = miner_response.get('response_data', {}).get('output_data', {}).get('summary', '')
+            if not validator_summary:
+                validator_summary = validator_result.get('summary', '')
+            
+            # Try multiple possible paths for miner summary
+            miner_summary = None
+            
+            # DEBUG: Log the miner response structure
+            bt.logging.debug(f"🔍 Miner response structure: {list(miner_response.keys())}")
+            if 'response_data' in miner_response:
+                bt.logging.debug(f"   response_data keys: {list(miner_response['response_data'].keys())}")
+                if 'output_data' in miner_response['response_data']:
+                    bt.logging.debug(f"   output_data keys: {list(miner_response['response_data']['output_data'].keys())}")
+            
+            # Try to extract summary from the correct path
+            if miner_response.get('response_data', {}).get('output_data', {}).get('summary'):
+                miner_summary = miner_response['response_data']['output_data']['summary']
+                bt.logging.debug(f"✅ Found summary in response_data.output_data.summary: {len(str(miner_summary))} chars")
+            elif miner_response.get('output_data', {}).get('summary'):
+                miner_summary = miner_response['output_data']['summary']
+                bt.logging.debug(f"✅ Found summary in output_data.summary: {len(str(miner_summary))} chars")
+            elif miner_response.get('summary'):
+                miner_summary = miner_response['summary']
+                bt.logging.debug(f"✅ Found summary in summary: {len(str(miner_summary))} chars")
+            elif miner_response.get('text'):
+                miner_summary = miner_response['text']
+                bt.logging.debug(f"✅ Found summary in text: {len(str(miner_summary))} chars")
+            else:
+                # Last resort: look for any text content in the response
+                for key, value in miner_response.items():
+                    if isinstance(value, str) and len(value) > 10:
+                        miner_summary = value
+                        bt.logging.debug(f"✅ Found text content in {key}: {len(value)} chars")
+                        break
             
             if not validator_summary or not miner_summary:
+                bt.logging.warning(f"⚠️ Missing summary data for comparison")
+                bt.logging.warning(f"   Validator: {len(str(validator_summary))} chars")
+                bt.logging.warning(f"   Miner: {len(str(miner_summary))} chars")
+                bt.logging.warning(f"   Miner response keys: {list(miner_response.keys())}")
                 return 0.5
             
             # Simple text similarity for summaries
@@ -2341,7 +2832,7 @@ class Validator(BaseValidatorNeuron):
             
             similarity = difflib.SequenceMatcher(None, validator_summary.lower(), miner_summary.lower()).ratio()
             
-            # Modify the validator's forward method to call the new evaluation method
+            # Convert similarity to score (0-1)
             score = similarity
             
             bt.logging.debug(f"Summarization similarity: {similarity:.4f} -> Score: {score:.4f}")
@@ -2349,6 +2840,67 @@ class Validator(BaseValidatorNeuron):
             
         except Exception as e:
             bt.logging.error(f"❌ Error comparing summarization results: {str(e)}")
+            return 0.5
+
+    async def compare_translation_results(self, validator_result: Dict, miner_response: Dict) -> float:
+        """Compare translation results between validator and miner"""
+        try:
+            # Extract validator translation
+            validator_translation = validator_result.get('output_data', {}).get('translated_text', '')
+            if not validator_translation:
+                validator_translation = validator_result.get('translated_text', '')
+            
+            # Try multiple possible paths for miner translation
+            miner_translation = None
+            
+            # DEBUG: Log the miner response structure
+            bt.logging.debug(f"🔍 Miner response structure: {list(miner_response.keys())}")
+            if 'response_data' in miner_response:
+                bt.logging.debug(f"   response_data keys: {list(miner_response['response_data'].keys())}")
+                if 'output_data' in miner_response['response_data']:
+                    bt.logging.debug(f"   output_data keys: {list(miner_response['response_data']['output_data'].keys())}")
+            
+            # Try to extract translation from the correct path
+            if miner_response.get('response_data', {}).get('output_data', {}).get('translated_text'):
+                miner_translation = miner_response['response_data']['output_data']['translated_text']
+                bt.logging.debug(f"✅ Found translation in response_data.output_data.translated_text: {len(str(miner_translation))} chars")
+            elif miner_response.get('output_data', {}).get('translated_text'):
+                miner_translation = miner_response['output_data']['translated_text']
+                bt.logging.debug(f"✅ Found translation in output_data.translated_text: {len(str(miner_translation))} chars")
+            elif miner_response.get('translated_text'):
+                miner_translation = miner_response['translated_text']
+                bt.logging.debug(f"✅ Found translation in translated_text: {len(str(miner_translation))} chars")
+            elif miner_response.get('text'):
+                miner_translation = miner_response['text']
+                bt.logging.debug(f"✅ Found translation in text: {len(str(miner_translation))} chars")
+            else:
+                # Last resort: look for any text content in the response
+                for key, value in miner_response.items():
+                    if isinstance(value, str) and len(value) > 10:
+                        miner_translation = value
+                        bt.logging.debug(f"✅ Found text content in {key}: {len(value)} chars")
+                        break
+            
+            if not validator_translation or not miner_translation:
+                bt.logging.warning(f"⚠️ Missing translation data for comparison")
+                bt.logging.warning(f"   Validator: {len(str(validator_translation))} chars")
+                bt.logging.warning(f"   Miner: {len(str(miner_translation))} chars")
+                bt.logging.warning(f"   Miner response keys: {list(miner_response.keys())}")
+                return 0.5
+            
+            # Simple text similarity for translations
+            import difflib
+            
+            similarity = difflib.SequenceMatcher(None, validator_translation.lower(), miner_translation.lower()).ratio()
+            
+            # Convert similarity to score (0-1)
+            score = similarity
+            
+            bt.logging.debug(f"Translation similarity: {similarity:.4f} -> Score: {score:.4f}")
+            return score
+            
+        except Exception as e:
+            bt.logging.error(f"❌ Error comparing translation results: {str(e)}")
             return 0.5
 
     async def calculate_final_weights(self, miner_performance: Dict) -> Dict[int, float]:
@@ -2903,9 +3455,16 @@ class Validator(BaseValidatorNeuron):
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
+                # Convert to Form data as expected by proxy endpoint
+                form_data = {
+                    'task_id': task_id,
+                    'validator_uid': getattr(self, 'uid', 'unknown'),
+                    'evaluation_data': json.dumps(evaluation_data)
+                }
+                
                 response = await client.post(
                     f"{self.proxy_server_url}/api/v1/validator/evaluation",
-                    json=evaluation_data,
+                    data=form_data,  # Use data instead of json
                     timeout=30.0
                 )
                 
@@ -3226,6 +3785,35 @@ class Validator(BaseValidatorNeuron):
         try:
             bt.logging.info("🎯 Setting weights ONLY for active miners...")
             
+            # CRITICAL FIX: Calculate scores from miner performance data if not available
+            if not hasattr(self, 'scores') or self.scores is None:
+                bt.logging.info("🔄 No scores available - calculating from miner performance data...")
+                
+                # Initialize scores array with zeros
+                if hasattr(self, 'metagraph') and self.metagraph.n > 0:
+                    self.scores = np.zeros(self.metagraph.n)
+                else:
+                    bt.logging.warning("⚠️ No metagraph available - cannot calculate scores")
+                    return
+            
+            # CRITICAL FIX: Update scores from miner performance data
+            if hasattr(self, 'miner_performance') and self.miner_performance:
+                bt.logging.info(f"📊 Updating scores from {len(self.miner_performance)} miner performance records...")
+                
+                for miner_uid, performance in self.miner_performance.items():
+                    if miner_uid < len(self.scores):
+                        # Convert performance score to 0-1 range
+                        total_score = performance.get('total_score', 0)
+                        if total_score > 0:
+                            # Normalize to 0-1 range (assuming max score is 500)
+                            normalized_score = min(total_score / 500.0, 1.0)
+                            self.scores[miner_uid] = normalized_score
+                            bt.logging.info(f"   UID {miner_uid}: score = {normalized_score:.6f} (from {total_score:.2f})")
+                
+                bt.logging.info(f"✅ Updated scores for {np.sum(self.scores > 0)} miners")
+            else:
+                bt.logging.warning("⚠️ No miner performance data available - using existing scores")
+            
             # Check if we have scores set
             if not hasattr(self, 'scores') or self.scores is None:
                 bt.logging.warning("⚠️ No scores available - skipping weight setting")
@@ -3278,7 +3866,7 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.info("✅ Weights set on blockchain successfully!")
                 bt.logging.info(f"   Active miners: {len(active_uids)}")
                 bt.logging.info(f"   Total miners in network: {self.metagraph.n}")
-                bt.logging.info(f"   Efficiency: {len(active_uids)}/{self.metagraph.n} miners rewarded")
+                bt.logging.info(f"   Efficiency: {len(active_uids)}/{len(active_uids)}/{self.metagraph.n} miners rewarded")
             else:
                 bt.logging.error(f"❌ set_weights failed: {msg}")
                 

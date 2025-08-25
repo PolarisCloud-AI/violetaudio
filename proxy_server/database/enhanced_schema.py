@@ -32,6 +32,9 @@ class TaskType(str, Enum):
     TTS = "tts"
     SUMMARIZATION = "summarization"
     TRANSLATION = "translation"
+    VIDEO_TRANSCRIPTION = "video_transcription"
+    TEXT_TRANSLATION = "text_translation"
+    DOCUMENT_TRANSLATION = "document_translation"
 
 class MinerStatus(str, Enum):
     ONLINE = "online"
@@ -351,6 +354,26 @@ class DatabaseOperations:
             print(f"❌ Error updating task status: {e}")
             return False
     
+    @staticmethod
+    def get_all_miners(db) -> List[Dict[str, Any]]:
+        """Get all registered miners"""
+        try:
+            query = db.collection(COLLECTIONS['miners'])
+            docs = query.stream()
+            miners = []
+            
+            for doc in docs:
+                miner_data = doc.to_dict()
+                miner_data['id'] = doc.id
+                miners.append(miner_data)
+            
+            print(f"🔍 Found {len(miners)} total miners")
+            return miners
+            
+        except Exception as e:
+            print(f"❌ Error getting all miners: {e}")
+            return []
+
     @staticmethod
     def get_available_miners(db, task_type: str = None, limit: int = 10) -> List[Dict[str, Any]]:
         """Get available miners that can process tasks"""

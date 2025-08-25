@@ -1,0 +1,23 @@
+# Machine Translation Pipeline Dependencies
+# These packages are required for the translation functionality
+
+# Core translation libraries
+transformers>=4.30.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Document processing libraries
+PyMuPDF>=1.23.0  # For PDF processing
+python-docx>=0.8.11  # For DOCX processing
+
+# Additional utilities
+numpy>=1.24.0
+requests>=2.31.0
+httpx>=0.24.0
+
+# Optional: For better performance
+accelerate>=0.20.0  # For model acceleration
+sentencepiece>=0.1.99  # For tokenization
+protobuf>=3.20.0  # For model loading
+
+# Note: Install with: pip install -r requirements_translation.txt

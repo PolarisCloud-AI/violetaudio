@@ -23,6 +23,8 @@ class FileManager:
         self.tts_audio_path = self.base_storage_path / "tts_audio"
         self.transcription_path = self.base_storage_path / "transcription_files"
         self.summarization_path = self.base_storage_path / "summarization_files"
+        self.video_path = self.base_storage_path / "user_videos"
+        self.document_path = self.base_storage_path / "user_documents"
         
         # Ensure directories exist
         self._ensure_directories()
@@ -34,7 +36,7 @@ class FileManager:
     
     def _ensure_directories(self):
         """Ensure all storage directories exist"""
-        for path in [self.user_audio_path, self.tts_audio_path, self.transcription_path, self.summarization_path]:
+        for path in [self.user_audio_path, self.tts_audio_path, self.transcription_path, self.summarization_path, self.video_path, self.document_path]:
             path.mkdir(parents=True, exist_ok=True)
             print(f"📁 Created directory: {path}")
     
@@ -46,8 +48,24 @@ class FileManager:
             return self.tts_audio_path
         elif file_type == "summarization":
             return self.summarization_path
+        elif file_type == "video_transcription":
+            return self.video_path
+        elif file_type == "document_translation":
+            return self.document_path
         else:
             return self.user_audio_path  # Default
+    
+    def _create_safe_filename(self, original_filename: str) -> str:
+        """Create a safe filename for storage by removing problematic characters"""
+        import re
+        # Remove or replace problematic characters
+        safe_filename = re.sub(r'[^\w\s\-_.]', '_', original_filename)
+        # Replace spaces with underscores
+        safe_filename = safe_filename.replace(' ', '_')
+        # Ensure it's not empty
+        if not safe_filename:
+            safe_filename = "unnamed_file"
+        return safe_filename
     
     async def upload_file(self, file_data: bytes, file_name: str, content_type: str, file_type: str = "audio") -> str:
         """Upload file to local storage"""
@@ -55,9 +73,12 @@ class FileManager:
             # Generate unique file ID
             file_id = str(uuid.uuid4())
             
+            # Create a safe filename for storage
+            safe_filename = self._create_safe_filename(file_name)
+            
             # Get appropriate storage path
             storage_path = self._get_storage_path_for_type(file_type)
-            file_path = storage_path / f"{file_id}_{file_name}"
+            file_path = storage_path / f"{file_id}_{safe_filename}"
             
             # Save file to local storage
             with open(file_path, 'wb') as f:

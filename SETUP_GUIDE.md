@@ -340,3 +340,5 @@ pipeline = TranscriptionPipeline("openai/whisper-tiny")  # 39MB vs 1.5GB for lar
 
 
 
+
+

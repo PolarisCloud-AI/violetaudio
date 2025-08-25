@@ -16,8 +16,75 @@ proxy_server/db/*.json
 *.data.json
 *.config.json
 
-# Ignore audio files
+# Media and Document Files
+# Audio files
 *.wav
+*.mp3
+*.aac
+*.ogg
+*.flac
+*.m4a
+*.wma
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.mkv
+*.m4v
+*.3gp
+*.mpg
+*.mpeg
+
+# Document files
+*.pdf
+*.doc
+*.docx
+*.rtf
+*.odt
+*.pages
+*.xls
+*.xlsx
+*.csv
+*.ppt
+*.pptx
+*.key
+
+# Text files - ignore most but keep important ones
+*.txt
+!requirements*.txt
+!README*.txt
+!LICENSE*.txt
+!CHANGELOG*.txt
+!CONTRIBUTING*.txt
+!AUTHORS*.txt
+!HISTORY*.txt
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.svg
+*.ico
+*.webp
+
+# Archive files
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.bz2
+*.xz
+*.lzma
+*.lz4
+*.zst
 
 # Ignore temporary text files but keep important ones
 *.tmp.txt
@@ -27,6 +94,19 @@ proxy_server/db/*.json
 proxy_server/db/
 proxy_server/local_storage/
 proxy_server/proxy_server/
+
+# File processing and storage directories
+uploads/
+downloads/
+temp/
+cache/
+processed_files/
+raw_files/
+output_files/
+test_files/
+sample_files/
+demo_files/
+example_files/
 
 # C extensions
 *.so
@@ -198,6 +278,15 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# Additional IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
 testing/
 
 # Editors
@@ -252,8 +341,31 @@ Thumbs.db
 
 # Wandb (Weights & Biases) logs
 wandb/
+wandb/**/files/requirements.txt
+wandb/**/files/*.py
+wandb/**/files/*.json
 
 # Test outputs and temporary files
 testing/
 .coverage
 .pytest_cache/
+
+# Additional development files
+*.bak
+*.backup
+*.orig
+*.rej
+*.patch
+*.diff
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+
+# Configuration backups
+*.conf.bak
+*.config.bak
+*.env.bak
