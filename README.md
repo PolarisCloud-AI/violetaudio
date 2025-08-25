@@ -35,6 +35,10 @@ This is a **production-ready Audio Processing Subnet** that provides:
 - **🔊 Text-to-Speech (TTS)**: Convert text to speech using Coqui TTS  
 - **📝 Text Summarization**: Summarize long text using BART models
 - **🌍 Multi-language Support**: 10+ languages (English, Spanish, French, German, etc.)
+- **🎬 Video Transcription**: Extract audio and transcribe video content
+- **🔤 Machine Translation**: Translate text between multiple languages
+- **📹 Video Processing**: Handle video files with audio extraction
+- **🎙️ Audio Enhancement**: Improve audio quality and processing
 
 ### **Key Features:**
 - **Speed-Optimized Evaluation**: 40% speed, 40% accuracy, 20% stake
@@ -62,7 +66,6 @@ File Upload → Database → Firestore → Processing → Evaluation → Final R
 
 ## 🚀 Quick Start
 
-### **Option 1: Automated Startup (Recommended)**
 ```bash
 # Start all components at once
 ./start_complete_system.sh
@@ -72,19 +75,6 @@ python test_complete_workflow.py
 
 # Stop all components
 ./stop_complete_system.sh
-```
-
-### **Option 2: Manual Startup**
-```bash
-# Terminal 1: Start Proxy Server
-cd proxy_server
-python enhanced_main.py
-
-# Terminal 2: Start Miner
-python neurons/miner.py
-
-# Terminal 3: Start Validator
-python neurons/validator.py
 ```
 
 ---
@@ -109,18 +99,11 @@ python enhanced_main.py
 
 ### **2. ⛏️ Miner**
 ```bash
-# Basic run
-python neurons/miner.py
-
-# With custom config
-python neurons/miner.py --config path/to/config.yaml
-
-# With specific network settings
 python neurons/miner.py \
   --netuid 49 \
   --subtensor.network finney \
-  --wallet.name mokoai \
-  --wallet.hotkey default \
+  --wallet.name wallet_name \
+  --wallet.hotkey hotkey \
   --logging.debug \
   --axon.ip 0.0.0.0 \
   --axon.port 8091 \
@@ -138,23 +121,20 @@ python neurons/miner.py \
 
 ### **3. ✅ Validator**
 ```bash
-# Basic run
-python neurons/validator.py
+
 
 # With proxy integration
 python neurons/validator.py \
   --netuid 49 \
   --subtensor.network finney \
-  --wallet.name luno \
-  --wallet.hotkey arusha \
+  --wallet.name wallet_name \
+  --wallet.hotkey hotkey \
   --logging.debug \
   --axon.ip 0.0.0.0 \
   --axon.port 8092 \
   --axon.external_ip YOUR_IP \
   --axon.external_port 8092 \
-  --proxy_server_url http://localhost:8000 \
-  --enable_proxy_integration \
-  --proxy_check_interval 30
+ 
 ```
 
 **Purpose**: Evaluate miner responses, set weights, coordinate tasks
@@ -171,28 +151,40 @@ python neurons/validator.py \
 
 ### **System Requirements**
 - **Python**: 3.8+
-- **RAM**: 8GB+ (for AI models)
-- **Storage**: 10GB+ (for models and files)
 - **Network**: Stable internet connection
+
+### **Validator Requirements**
+- **GPU**: Required (for model evaluation and processing)
+- **RAM**: 12GB+ (for AI models and validation)
+- **Storage**: 100GB+ (for models, files, and database)
+
+### **Miner Requirements**
+- **GPU**: Required (for AI model inference)
+- **RAM**: 12GB+ (for AI models and processing)
+- **VRAM**: 12GB+ (for GPU model loading)
+- **Storage**: 100GB+ (for models and temporary files)
 
 ### **Model Performance**
 - **Whisper Tiny**: ~1-3 seconds for 30-second audio
 - **TTS (Tacotron2-DDC)**: ~2-5 seconds for 100 words
 - **BART Large CNN**: ~1-2 seconds for 500 words
+- **Video Processing**: ~5-15 seconds for 1-minute video
+- **Machine Translation**: ~2-4 seconds for 100 words
+- **Audio Enhancement**: ~3-6 seconds for 30-second audio
 
-### **Supported Languages**
-| Language | Code | Transcription | TTS | Summarization |
-|----------|------|---------------|-----|---------------|
-| English  | en   | ✅            | ✅  | ✅            |
-| Spanish  | es   | ✅            | ✅  | ✅            |
-| French   | fr   | ✅            | ✅  | ✅            |
-| German   | de   | ✅            | ✅  | ✅            |
-| Italian  | it   | ✅            | ✅  | ✅            |
-| Portuguese| pt  | ✅            | ✅  | ✅            |
-| Russian  | ru   | ✅            | ✅  | ✅            |
-| Japanese | ja   | ✅            | ✅  | ✅            |
-| Korean   | ko   | ✅            | ✅  | ✅            |
-| Chinese  | zh   | ✅            | ✅  | ✅            |
+### **Supported Languages & Services**
+| Language | Code | Transcription | TTS | Summarization | Translation | Video Processing |
+|----------|------|---------------|-----|---------------|-------------|------------------|
+| English  | en   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Spanish  | es   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| French   | fr   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| German   | de   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Italian  | it   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Portuguese| pt  | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Russian  | ru   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Japanese | ja   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Korean   | ko   | ✅            | ✅  | ✅            | ✅          | ✅               |
+| Chinese  | zh   | ✅            | ✅  | ✅            | ✅          | ✅               |
 
 ---
 
@@ -280,11 +272,13 @@ tail -f logs/validator.log
 - **Smart Distribution**: Assigns tasks to optimal miners (1-10 miners per task)
 - **Status Tracking**: Complete lifecycle from creation to completion
 - **Load Balancing**: Intelligent miner selection based on performance
+- **Multi-format Support**: Audio, video, text, and translation tasks
 
 ### **✅ Response Handling**
 - **Real-time Processing**: Immediate feedback on first response
 - **Quality Validation**: Comprehensive scoring and evaluation
 - **Error Handling**: Graceful handling of failed responses and broken files
+- **Multi-pipeline Support**: Transcription, TTS, summarization, translation, and video processing
 
 ### **✅ Proxy Server Integration**
 - **Task Filtering**: Miners only get assigned tasks (not completed ones)
@@ -374,5 +368,5 @@ For support and questions:
 - **API Docs**: Visit `http://localhost:8000/docs` when proxy server is running
 
 ---
-**🎉 Happy Mining and Validating! This subnet is production-ready with a sophisticated proxy server architecture that handles the complete workflow from task submission to final result delivery!**
+**🎉 Happy Mining and Validating! This subnet is production-ready with a sophisticated proxy server architecture that handles the complete workflow from task submission to final result delivery! Supports audio transcription, TTS, summarization, machine translation, video processing, and audio enhancement across 10+ languages!**
 =======
