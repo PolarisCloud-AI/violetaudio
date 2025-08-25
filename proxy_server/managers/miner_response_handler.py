@@ -16,47 +16,59 @@ class MinerResponseHandler:
         self.tasks_collection = db.collection('tasks')
     
     async def handle_miner_response(self, task_id: str, miner_uid: int, response_data: Dict) -> bool:
-        """Handle miner response and update task status"""
+        """Handle miner response for a specific task"""
         try:
-            # Get task details
-            task = self.task_manager.get_task(task_id)
-            if not task:
-                print(f"❌ Task {task_id} not found")
+            print(f"📥 Handling miner {miner_uid} response for task {task_id}")
+            
+            # 🔒 DUPLICATE PROTECTION: Check if miner already responded to this task
+            current_task = self.tasks_collection.document(task_id).get()
+            if not current_task.exists:
+                print(f"❌ Task {task_id} not found in database")
                 return False
             
-            # Prepare response data - use datetime.now() for embedded documents
-            # firestore.SERVER_TIMESTAMP cannot be stored in document fields that get retrieved later
+            task_data = current_task.to_dict()
+            miner_responses = task_data.get('miner_responses', [])
+            
+            # Check for duplicate responses from the same miner
+            for existing_response in miner_responses:
+                if existing_response.get('miner_uid') == miner_uid:
+                    print(f"⚠️ Miner {miner_uid} already responded to task {task_id}, ignoring duplicate response")
+                    print(f"   Previous response timestamp: {existing_response.get('submitted_at', 'unknown')}")
+                    print(f"   Duplicate response timestamp: {response_data.get('submitted_at', 'unknown')}")
+                    return False
+            
+            print(f"✅ No duplicate response detected for miner {miner_uid} on task {task_id}")
+            
+            # Create response document
             response_doc = {
                 'miner_uid': miner_uid,
+                'task_id': task_id,
                 'response_data': response_data,
-                'status': 'completed',
-                'submitted_at': datetime.now(),
-                'processing_time': response_data.get('processing_time', 0),
-                'accuracy_score': response_data.get('accuracy_score', 0),
-                'speed_score': response_data.get('speed_score', 0)
+                'submitted_at': datetime.utcnow(),
+                'status': 'completed'
             }
             
-            # If this is a TTS task and has audio output, store the audio file
-            if task.get('task_type') == 'tts' and response_data.get('output_data'):
+            # Add accuracy and speed scores if available
+            if 'accuracy_score' in response_data:
+                response_doc['accuracy_score'] = response_data['accuracy_score']
+            if 'speed_score' in response_data:
+                response_doc['speed_score'] = response_data['speed_score']
+            if 'processing_time' in response_data:
+                response_doc['processing_time'] = response_data['processing_time']
+            
+            # Handle file uploads for specific task types
+            task_type = task_data.get('task_type')
+            if task_type == 'tts' and 'audio_file' in response_data:
                 try:
-                    import base64
-                    audio_data = base64.b64decode(response_data['output_data'])
-                    
-                    from ..managers.file_manager import FileManager
-                    file_manager = FileManager(self.db)
-                    
-                    filename = f"tts_output_{task_id}_{miner_uid}.wav"
-                    
-                    file_id = await file_manager.upload_file(
-                        audio_data,
-                        filename,
-                        "audio/wav",
-                        file_type="tts"
+                    # Store TTS audio file
+                    audio_data = response_data['audio_file']
+                    file_id = self.file_manager.store_file(
+                        audio_data, 
+                        f"tts_audio_{task_id}_{miner_uid}.wav",
+                        'audio/wav',
+                        'user_audio'
                     )
-                    
-                    response_doc['output_file_id'] = file_id
-                    response_doc['output_file_url'] = f"http://localhost:8000/api/v1/files/{file_id}"
-                    
+                    response_doc['audio_file_id'] = file_id
                     print(f"✅ TTS audio file stored: {file_id}")
                     
                 except Exception as e:
@@ -65,36 +77,42 @@ class MinerResponseHandler:
             # Store response directly in task document (embedded approach)
             task_ref = self.tasks_collection.document(task_id)
             
-            # Get current task data
-            task_doc = task_ref.get()
-            if not task_doc.exists:
-                print(f"❌ Task {task_id} not found in database")
+            # Get current task data again (in case it changed)
+            current_task = task_ref.get()
+            if not current_task.exists:
+                print(f"❌ Task {task_id} not found in database during response storage")
                 return False
             
-            current_task = task_doc.to_dict()
-            miner_responses = current_task.get('miner_responses', [])
+            current_task_data = current_task.to_dict()
+            current_miner_responses = current_task_data.get('miner_responses', [])
+            
+            # 🔒 DUPLICATE PROTECTION: Double-check for duplicates before storing
+            for existing_response in current_miner_responses:
+                if existing_response.get('miner_uid') == miner_uid:
+                    print(f"⚠️ Miner {miner_uid} already responded to task {task_id} (race condition detected), ignoring duplicate")
+                    return False
             
             # Add new response to the list
-            if isinstance(miner_responses, list):
-                miner_responses.append(response_doc)
+            if isinstance(current_miner_responses, list):
+                current_miner_responses.append(response_doc)
             else:
                 # Fallback for old dictionary format
-                miner_responses = [response_doc]
+                current_miner_responses = [response_doc]
             
             # Update task with embedded response - use firestore.SERVER_TIMESTAMP for top-level fields
             update_data = {
-                'miner_responses': miner_responses,
+                'miner_responses': current_miner_responses,
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
             # Check if all miners completed
-            assigned_miners = current_task.get('assigned_miners', [])
-            if len(miner_responses) >= len(assigned_miners):
+            assigned_miners = current_task_data.get('assigned_miners', [])
+            if len(current_miner_responses) >= len(assigned_miners):
                 update_data['status'] = TaskStatus.COMPLETED.value
                 update_data['all_miners_completed_at'] = firestore.SERVER_TIMESTAMP
                 
                 # Calculate best response
-                best_response = self._calculate_best_response(miner_responses)
+                best_response = self._calculate_best_response(current_miner_responses)
                 if best_response:
                     update_data['best_response'] = best_response
             
@@ -107,6 +125,37 @@ class MinerResponseHandler:
         except Exception as e:
             print(f"❌ Error handling miner response: {e}")
             return False
+    
+    def get_duplicate_protection_stats(self) -> Dict[str, Any]:
+        """Get statistics about duplicate response protection"""
+        try:
+            # Count tasks with multiple responses from same miner
+            duplicate_count = 0
+            total_responses = 0
+            
+            # Query all tasks to analyze response patterns
+            tasks = self.tasks_collection.stream()
+            for task_doc in tasks:
+                task_data = task_doc.to_dict()
+                miner_responses = task_data.get('miner_responses', [])
+                
+                if isinstance(miner_responses, list):
+                    total_responses += len(miner_responses)
+                    
+                    # Check for duplicate miner UIDs
+                    miner_uids = [resp.get('miner_uid') for resp in miner_responses]
+                    if len(miner_uids) != len(set(miner_uids)):
+                        duplicate_count += 1
+            
+            return {
+                'duplicate_protection_active': True,
+                'total_responses_processed': total_responses,
+                'tasks_with_duplicate_responses': duplicate_count,
+                'duplicate_protection_effectiveness': f"{((total_responses - duplicate_count) / total_responses * 100):.2f}%" if total_responses > 0 else "100%"
+            }
+        except Exception as e:
+            print(f"⚠️ Error getting duplicate protection stats: {e}")
+            return {'error': str(e)}
     
     def _calculate_best_response(self, miner_responses: List[Dict]) -> Optional[Dict]:
         """Calculate the best response based on accuracy and speed scores"""

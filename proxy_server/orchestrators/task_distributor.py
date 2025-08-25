@@ -95,8 +95,24 @@ class TaskDistributor:
             task_id = task.get('task_id')
             task_type = task.get('task_type')
             required_count = task.get('required_miner_count', 1)
+            current_status = task.get('status')
             
             print(f"   📋 Distributing task {task_id} ({task_type}) to {required_count} miners")
+            
+            # 🔒 DUPLICATE PROTECTION: Check task status before distribution
+            if current_status in ['completed', 'failed', 'cancelled']:
+                print(f"      ⚠️ Task {task_id} has status '{current_status}', skipping distribution")
+                return False
+            
+            if current_status == 'assigned':
+                print(f"      ⚠️ Task {task_id} is already assigned to miners, skipping duplicate distribution")
+                return False
+            
+            if current_status == 'in_progress':
+                print(f"      ⚠️ Task {task_id} is already in progress, skipping duplicate distribution")
+                return False
+            
+            print(f"      ✅ Task {task_id} status '{current_status}' is valid for distribution")
             
             # Ensure we have enough available miners
             if len(available_miners) < required_count:
@@ -209,6 +225,37 @@ class TaskDistributor:
         except Exception as e:
             print(f"❌ Error assigning task to miners: {e}")
             return False
+    
+    def get_duplicate_protection_stats(self) -> Dict[str, Any]:
+        """Get statistics about duplicate distribution protection"""
+        try:
+            # Count tasks by status to analyze distribution patterns
+            status_counts = {}
+            total_tasks = 0
+            skipped_distributions = 0
+            
+            # Query all tasks to analyze status patterns
+            docs = self.tasks_collection.stream()
+            for doc in docs:
+                task_data = doc.to_dict()
+                status = task_data.get('status', 'unknown')
+                status_counts[status] = status_counts.get(status, 0) + 1
+                total_tasks += 1
+                
+                # Count tasks that would be skipped due to duplicate protection
+                if status in ['completed', 'failed', 'cancelled', 'assigned', 'in_progress']:
+                    skipped_distributions += 1
+            
+            return {
+                'duplicate_protection_active': True,
+                'total_tasks': total_tasks,
+                'status_distribution': status_counts,
+                'tasks_protected_from_duplicate_distribution': skipped_distributions,
+                'duplicate_protection_effectiveness': f"{(skipped_distributions / total_tasks * 100):.2f}%" if total_tasks > 0 else "100%"
+            }
+        except Exception as e:
+            print(f"⚠️ Error getting duplicate protection stats: {e}")
+            return {'error': str(e)}
     
     async def _update_miner_load(self, miner_uid: int, increment: bool = True):
         """Update miner's current load"""
