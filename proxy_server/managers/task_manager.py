@@ -21,6 +21,15 @@ class TaskManager:
         self.min_miners_per_task = 1
         self.max_miners_per_task = 10
         self.default_miners_per_task = 3
+        
+        # Import and initialize batch database manager
+        try:
+            from ..database.batch_manager import BatchDatabaseManager
+            self.batch_manager = BatchDatabaseManager(db)
+            print("✅ Batch database manager initialized")
+        except ImportError as e:
+            print(f"⚠️ Could not import batch database manager: {e}")
+            self.batch_manager = None
     
     async def create_task(self, task_data: Dict) -> str:
         """Create a new task"""
@@ -46,10 +55,16 @@ class TaskManager:
                 'user_metadata': task_data.get('user_metadata', {})
             }
             
-            # Save to database
-            self.tasks_collection.document(task_id).set(task_doc)
+            # Use batch manager if available, otherwise save directly
+            if self.batch_manager:
+                # Use batch operation
+                await self.batch_manager.create_task(task_doc)
+                print(f"✅ Task queued for creation: {task_id} ({task_data['task_type']}) - Required miners: {task_doc['required_miner_count']}")
+            else:
+                # Fallback to direct save
+                self.tasks_collection.document(task_id).set(task_doc)
+                print(f"✅ Task created directly: {task_id} ({task_data['task_type']}) - Required miners: {task_doc['required_miner_count']}")
             
-            print(f"✅ Task created: {task_id} ({task_data['task_type']}) - Required miners: {task_doc['required_miner_count']}")
             return task_id
             
         except Exception as e:

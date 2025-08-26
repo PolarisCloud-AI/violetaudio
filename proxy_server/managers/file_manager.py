@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from firebase_admin import firestore
 from pathlib import Path
 import mimetypes
+from datetime import datetime
 
 class FileManager:
     def __init__(self, db):
@@ -31,6 +32,15 @@ class FileManager:
         
         # Base URL for remote access
         self.base_url = "http://localhost:8000/api/v1/files"
+        
+        # Import and initialize smart file manager
+        try:
+            from .smart_file_manager import SmartFileManager
+            self.smart_file_manager = SmartFileManager(db)
+            print("✅ Smart file manager initialized")
+        except ImportError as e:
+            print(f"⚠️ Could not import smart file manager: {e}")
+            self.smart_file_manager = None
         
         print(f"✅ Local File Storage initialized at: {self.base_storage_path.absolute()}")
     
@@ -68,46 +78,18 @@ class FileManager:
         return safe_filename
     
     async def upload_file(self, file_data: bytes, file_name: str, content_type: str, file_type: str = "audio") -> str:
-        """Upload file to local storage"""
+        """Upload file using smart storage strategy"""
         try:
-            # Generate unique file ID
-            file_id = str(uuid.uuid4())
-            
-            # Create a safe filename for storage
-            safe_filename = self._create_safe_filename(file_name)
-            
-            # Get appropriate storage path
-            storage_path = self._get_storage_path_for_type(file_type)
-            file_path = storage_path / f"{file_id}_{safe_filename}"
-            
-            # Save file to local storage
-            with open(file_path, 'wb') as f:
-                f.write(file_data)
-            
-            # Generate file URL for remote access
-            file_url = f"{self.base_url}/{file_id}"
-            
-            # Store file metadata in database
-            file_metadata = {
-                'file_id': file_id,
-                'file_name': file_name,
-                'file_path': str(file_path),
-                'content_type': content_type,
-                'size': len(file_data),
-                'uploaded_at': firestore.SERVER_TIMESTAMP,  # This is not awaitable
-                'file_url': file_url,
-                'status': 'active',
-                'checksum': hashlib.md5(file_data).hexdigest(),
-                'file_type': file_type,
-                'local_path': str(file_path)
-            }
-            
-            self.files_collection.document(file_id).set(file_metadata)  # Remove await
-            
-            print(f"✅ File {file_name} uploaded successfully: {file_id}")
-            print(f"📁 Stored at: {file_path}")
-            print(f"🌐 Accessible at: {file_url}")
-            return file_id
+            # Use smart file manager if available, otherwise fall back to original method
+            if self.smart_file_manager:
+                # Use smart storage (automatically chooses local vs Firestore based on size)
+                file_metadata = await self.smart_file_manager.store_file(file_data, file_name, content_type, file_type)
+                file_id = file_metadata['file_id']
+                print(f"✅ File uploaded using smart storage: {file_id}")
+                return file_id
+            else:
+                # Fallback to original method
+                return await self._upload_file_legacy(file_data, file_name, content_type, file_type)
             
         except Exception as e:
             print(f"❌ Failed to upload file {file_name}: {e}")
@@ -255,3 +237,49 @@ class FileManager:
         except Exception as e:
             print(f"❌ Error getting storage statistics: {e}")
             return {}
+    
+    async def _upload_file_legacy(self, file_data: bytes, file_name: str, content_type: str, file_type: str = "audio") -> str:
+        """Legacy file upload method (fallback when smart file manager is not available)"""
+        try:
+            # Generate unique file ID
+            file_id = str(uuid.uuid4())
+            
+            # Create a safe filename for storage
+            safe_filename = self._create_safe_filename(file_name)
+            
+            # Get appropriate storage path
+            storage_path = self._get_storage_path_for_type(file_type)
+            file_path = storage_path / f"{file_id}_{safe_filename}"
+            
+            # Save file to local storage
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            # Generate file URL for remote access
+            file_url = f"{self.base_url}/{file_id}"
+            
+            # Store file metadata in database
+            file_metadata = {
+                'file_id': file_id,
+                'file_name': file_name,
+                'file_path': str(file_path),
+                'content_type': content_type,
+                'size': len(file_data),
+                'uploaded_at': datetime.now(),
+                'file_url': file_url,
+                'status': 'active',
+                'checksum': hashlib.md5(file_data).hexdigest(),
+                'file_type': file_type,
+                'local_path': str(file_path)
+            }
+            
+            self.files_collection.document(file_id).set(file_metadata)
+            
+            print(f"✅ File {file_name} uploaded using legacy method: {file_id}")
+            print(f"📁 Stored at: {file_path}")
+            print(f"🌐 Accessible at: {file_url}")
+            return file_id
+            
+        except Exception as e:
+            print(f"❌ Legacy file upload failed: {e}")
+            raise

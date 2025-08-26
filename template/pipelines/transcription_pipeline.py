@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2024 Bittensor Subnet Template
 
 import time
 import torch
@@ -12,11 +11,8 @@ import io
 import soundfile as sf
 from typing import Optional, Tuple, List, Dict, Union
 import gc
-import psutil
 import logging
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,24 +40,21 @@ class TranscriptionResult:
 
 class TranscriptionPipeline:
     """
-    Enhanced audio transcription pipeline using Whisper models.
-    Supports timestamped chunks, memory management, and production-ready features.
+    Clean and efficient audio transcription pipeline using Whisper models.
+    Supports timestamped chunks and is compatible with existing miner code.
     """
     
-    def __init__(self, model_name: str = "openai/whisper-tiny", chunk_duration: float = 30.0, max_memory_gb: float = 4.0):
+    def __init__(self, model_name: str = "openai/whisper-tiny", chunk_duration: float = 30.0):
         """
-        Initialize the enhanced transcription pipeline.
+        Initialize the transcription pipeline.
         
         Args:
             model_name: HuggingFace model name for Whisper
             chunk_duration: Duration of each audio chunk in seconds
-            max_memory_gb: Maximum memory usage in GB before chunking
         """
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.chunk_duration = chunk_duration
-        self.max_memory_gb = max_memory_gb
-        self.max_memory_bytes = max_memory_gb * 1024 * 1024 * 1024
         
         # Load model and processor
         logger.info(f"🔄 Loading Whisper model: {model_name}")
@@ -72,184 +65,22 @@ class TranscriptionPipeline:
         
         # Language code mapping
         self.language_codes = {
-            "en": "english",
-            "es": "spanish", 
-            "fr": "french",
-            "de": "german",
-            "it": "italian",
-            "pt": "portuguese",
-            "ru": "russian",
-            "ja": "japanese",
-            "ko": "korean",
-            "zh": "chinese",
-            "ar": "arabic",
-            "hi": "hindi",
-            "nl": "dutch",
-            "pl": "polish",
-            "sv": "swedish",
-            "tr": "turkish",
-            "bg": "bulgarian",
-            "ca": "catalan",
-            "cs": "czech",
-            "da": "danish",
-            "el": "greek",
-            "et": "estonian",
-            "fi": "finnish",
-            "hr": "croatian",
-            "hu": "hungarian",
-            "id": "indonesian",
-            "lt": "lithuanian",
-            "lv": "latvian",
-            "ms": "malay",
-            "mt": "maltese",
-            "no": "norwegian",
-            "ro": "romanian",
-            "sk": "slovak",
-            "sl": "slovenian",
-            "th": "thai",
-            "uk": "ukrainian",
-            "vi": "vietnamese"
-        }
-        
-        # Performance monitoring
-        self.processing_stats = {
-            'total_files_processed': 0,
-            'total_audio_duration': 0.0,
-            'total_processing_time': 0.0,
-            'memory_usage_samples': []
+            "en": "english", "es": "spanish", "fr": "french", "de": "german",
+            "it": "italian", "pt": "portuguese", "ru": "russian", "ja": "japanese",
+            "ko": "korean", "zh": "chinese", "ar": "arabic", "hi": "hindi"
         }
     
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in GB"""
-        process = psutil.Process()
-        memory_gb = process.memory_info().rss / (1024 * 1024 * 1024)
-        self.processing_stats['memory_usage_samples'].append(memory_gb)
-        return memory_gb
-    
-    def _should_chunk_audio(self, audio_duration: float, audio_size_bytes: int) -> bool:
-        """Determine if audio should be chunked based on duration and memory constraints"""
-        # Chunk if audio is longer than chunk duration
-        if audio_duration > self.chunk_duration:
-            return True
-        
-        # Chunk if audio file is larger than memory threshold
-        if audio_size_bytes > self.max_memory_bytes * 0.5:  # 50% of max memory
-            return True
-        
-        # Chunk if current memory usage is high
-        current_memory = self._get_memory_usage()
-        if current_memory > self.max_memory_gb * 0.8:  # 80% of max memory
-            return True
-        
-        return False
-    
-    def _segment_audio(self, audio_array: np.ndarray, sample_rate: int) -> List[Tuple[np.ndarray, float, float]]:
-        """Segment audio into chunks with timing information"""
-        chunk_samples = int(self.chunk_duration * sample_rate)
-        chunks = []
-        
-        for i in range(0, len(audio_array), chunk_samples):
-            start_sample = i
-            end_sample = min(i + chunk_samples, len(audio_array))
-            
-            # Extract chunk
-            chunk = audio_array[start_sample:end_sample]
-            
-            # Calculate timing
-            start_time = start_sample / sample_rate
-            end_time = end_sample / sample_rate
-            
-            chunks.append((chunk, start_time, end_time))
-        
-        logger.info(f"📊 Audio segmented into {len(chunks)} chunks of ~{self.chunk_duration}s each")
-        return chunks
-    
-    def _transcribe_chunk(self, chunk_data: Tuple[np.ndarray, float, float], language: str, chunk_index: int) -> TranscriptionChunk:
-        """Transcribe a single audio chunk"""
-        chunk, start_time, end_time = chunk_data
-        
-        try:
-            # Prepare input for Whisper
-            inputs = self.processor(
-                chunk, 
-                sampling_rate=16000, 
-                return_tensors="pt"
-            ).input_features.to(self.device)
-            
-            # Generate transcription
-            predicted_ids = self.model.generate(inputs)
-            transcription = self.processor.batch_decode(
-                predicted_ids, 
-                skip_special_tokens=True
-            )[0]
-            
-            # Calculate confidence (simple heuristic based on text length)
-            confidence = min(0.95, max(0.5, len(transcription.strip()) / 50))
-            
-            return TranscriptionChunk(
-                start_time=start_time,
-                end_time=end_time,
-                text=transcription.strip(),
-                confidence=confidence,
-                language=language,
-                chunk_index=chunk_index
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Chunk {chunk_index} transcription failed: {e}")
-            # Return empty chunk with error info
-            return TranscriptionChunk(
-                start_time=start_time,
-                end_time=end_time,
-                text=f"[Transcription Error: {str(e)}]",
-                confidence=0.0,
-                language=language,
-                chunk_index=chunk_index
-            )
-    
-    def preprocess_audio(self, audio_bytes: bytes) -> Tuple[np.ndarray, int]:
+    def transcribe(self, audio_bytes: bytes, language: str = "en") -> Tuple[str, float]:
         """
-        Preprocess audio bytes to the format expected by Whisper.
+        Transcribe audio and return (transcript, processing_time) tuple.
+        This maintains compatibility with existing miner code.
         
         Args:
-            audio_bytes: Raw audio bytes
+            audio_bytes: Raw audio data
+            language: Language code (e.g., 'en', 'es')
             
         Returns:
-            Tuple of (audio_array, sample_rate)
-        """
-        try:
-            # Load audio from bytes
-            audio_array, sample_rate = sf.read(io.BytesIO(audio_bytes))
-            
-            # Convert to mono if stereo
-            if len(audio_array.shape) > 1:
-                audio_array = np.mean(audio_array, axis=1)
-            
-            # Resample to 16kHz if needed (Whisper requirement)
-            if sample_rate != 16000:
-                audio_array = librosa.resample(audio_array, orig_sr=sample_rate, target_sr=16000)
-                sample_rate = 16000
-            
-            # Normalize audio
-            if np.max(np.abs(audio_array)) > 0:
-                audio_array = audio_array / np.max(np.abs(audio_array))
-            
-            return audio_array, sample_rate
-            
-        except Exception as e:
-            logger.error(f"❌ Audio preprocessing failed: {e}")
-            raise Exception(f"Audio preprocessing failed: {str(e)}")
-    
-    def transcribe(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
-        """
-        Transcribe audio to text with timestamped chunks.
-        
-        Args:
-            audio_bytes: Raw audio bytes
-            language: Language code (e.g., 'en', 'es', 'fr')
-            
-        Returns:
-            TranscriptionResult with chunks and metadata
+            Tuple of (transcript_text, processing_time)
         """
         start_time = time.time()
         
@@ -263,18 +94,55 @@ class TranscriptionPipeline:
             logger.info(f"📊 Audio info: {audio_duration:.2f}s duration, {sample_rate}Hz sample rate")
             
             # Check if chunking is needed
-            should_chunk = self._should_chunk_audio(audio_duration, len(audio_bytes))
+            should_chunk = audio_duration > self.chunk_duration
             
             if should_chunk:
                 logger.info(f"✂️ Chunking audio for better processing")
-                return self._transcribe_chunked(audio_array, sample_rate, language, start_time)
+                result = self._transcribe_chunked(audio_array, sample_rate, language, start_time)
             else:
                 logger.info(f"🔄 Processing audio as single chunk")
-                return self._transcribe_single(audio_array, sample_rate, language, start_time)
+                result = self._transcribe_single(audio_array, sample_rate, language, start_time)
+            
+            # Return tuple format for compatibility
+            return result.full_text, result.processing_time
                 
         except Exception as e:
             processing_time = time.time() - start_time
             logger.error(f"❌ Transcription failed: {e}")
+            return "", processing_time
+    
+    def transcribe_with_timestamps(self, audio_bytes: bytes, language: str = "en") -> TranscriptionResult:
+        """
+        Transcribe audio with full timestamp information.
+        Use this when you need detailed timing data.
+        
+        Args:
+            audio_bytes: Raw audio data
+            language: Language code
+            
+        Returns:
+            TranscriptionResult with full metadata
+        """
+        start_time = time.time()
+        
+        try:
+            logger.info(f"🎵 Starting timestamped transcription of {len(audio_bytes)} bytes")
+            
+            # Preprocess audio
+            audio_array, sample_rate = self.preprocess_audio(audio_bytes)
+            audio_duration = len(audio_array) / sample_rate
+            
+            # Check if chunking is needed
+            should_chunk = audio_duration > self.chunk_duration
+            
+            if should_chunk:
+                return self._transcribe_chunked(audio_array, sample_rate, language, start_time)
+            else:
+                return self._transcribe_single(audio_array, sample_rate, language, start_time)
+                
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(f"❌ Timestamped transcription failed: {e}")
             raise Exception(f"Transcription failed: {str(e)}")
     
     def _transcribe_single(self, audio_array: np.ndarray, sample_rate: int, language: str, start_time: float) -> TranscriptionResult:
@@ -306,9 +174,6 @@ class TranscriptionPipeline:
                 chunk_index=0
             )
             
-            # Update stats
-            self._update_stats(len(audio_array) / sample_rate, processing_time)
-            
             return TranscriptionResult(
                 full_text=transcription.strip(),
                 chunks=[chunk],
@@ -328,59 +193,67 @@ class TranscriptionPipeline:
             raise
     
     def _transcribe_chunked(self, audio_array: np.ndarray, sample_rate: int, language: str, start_time: float) -> TranscriptionResult:
-        """Transcribe audio in chunks with parallel processing"""
+        """Transcribe audio in chunks with timing information"""
         try:
             # Segment audio
             chunks = self._segment_audio(audio_array, sample_rate)
             
-            # Process chunks (can be parallelized for better performance)
+            # Process chunks sequentially for reliability
             transcribed_chunks = []
+            full_text_parts = []
             
-            # Use ThreadPoolExecutor for parallel processing
-            with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as executor:
-                # Submit all chunk transcription tasks
-                future_to_chunk = {
-                    executor.submit(self._transcribe_chunk, chunk, language, i): i 
-                    for i, chunk in enumerate(chunks)
-                }
-                
-                # Collect results as they complete
-                for future in as_completed(future_to_chunk):
-                    chunk_index = future_to_chunk[future]
-                    try:
-                        chunk_result = future.result()
-                        transcribed_chunks.append(chunk_result)
-                        logger.info(f"✅ Chunk {chunk_index + 1}/{len(chunks)} completed")
-                    except Exception as e:
-                        logger.error(f"❌ Chunk {chunk_index + 1} failed: {e}")
-                        # Add error chunk
-                        chunk_data = chunks[chunk_index]
-                        error_chunk = TranscriptionChunk(
-                            start_time=chunk_data[1],
-                            end_time=chunk_data[2],
-                            text=f"[Error: {str(e)}]",
-                            confidence=0.0,
-                            language=language,
-                            chunk_index=chunk_index
-                        )
-                        transcribed_chunks.append(error_chunk)
-            
-            # Sort chunks by index to maintain order
-            transcribed_chunks.sort(key=lambda x: x.chunk_index)
-            
-            # Combine all text
-            full_text = " ".join([chunk.text for chunk in transcribed_chunks])
+            for i, (chunk, start_time_chunk, end_time_chunk) in enumerate(chunks):
+                try:
+                    # Prepare input for Whisper
+                    inputs = self.processor(
+                        chunk, 
+                        sampling_rate=sample_rate, 
+                        return_tensors="pt"
+                    ).input_features.to(self.device)
+                    
+                    # Generate transcription
+                    predicted_ids = self.model.generate(inputs)
+                    transcription = self.processor.batch_decode(
+                        predicted_ids, 
+                        skip_special_tokens=True
+                    )[0]
+                    
+                    # Calculate confidence (simple heuristic)
+                    confidence = min(0.95, max(0.5, len(transcription.strip()) / 50))
+                    
+                    # Create chunk result
+                    chunk_result = TranscriptionChunk(
+                        start_time=start_time_chunk,
+                        end_time=end_time_chunk,
+                        text=transcription.strip(),
+                        confidence=confidence,
+                        language=language,
+                        chunk_index=i
+                    )
+                    
+                    transcribed_chunks.append(chunk_result)
+                    full_text_parts.append(transcription.strip())
+                    
+                    logger.info(f"✅ Chunk {i+1}/{len(chunks)} transcribed: {start_time_chunk:.1f}s - {end_time_chunk:.1f}s")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Chunk {i} transcription failed: {e}")
+                    # Create empty chunk for failed segment
+                    chunk_result = TranscriptionChunk(
+                        start_time=start_time_chunk,
+                        end_time=end_time_chunk,
+                        text="[Transcription failed]",
+                        confidence=0.0,
+                        language=language,
+                        chunk_index=i
+                    )
+                    transcribed_chunks.append(chunk_result)
+                    full_text_parts.append("[Transcription failed]")
             
             processing_time = time.time() - start_time
             
-            # Update stats
-            self._update_stats(len(audio_array) / sample_rate, processing_time)
-            
-            # Clean up memory
-            self._cleanup_memory()
-            
             return TranscriptionResult(
-                full_text=full_text,
+                full_text=" ".join(full_text_parts),
                 chunks=transcribed_chunks,
                 total_duration=len(audio_array) / sample_rate,
                 processing_time=processing_time,
@@ -388,10 +261,8 @@ class TranscriptionPipeline:
                 metadata={
                     'chunked': True,
                     'chunk_count': len(chunks),
-                    'chunk_duration': self.chunk_duration,
                     'model_used': self.model_name,
-                    'device': self.device,
-                    'parallel_processing': True
+                    'device': self.device
                 }
             )
             
@@ -399,54 +270,70 @@ class TranscriptionPipeline:
             logger.error(f"❌ Chunked transcription failed: {e}")
             raise
     
-    def _update_stats(self, audio_duration: float, processing_time: float):
-        """Update processing statistics"""
-        self.processing_stats['total_files_processed'] += 1
-        self.processing_stats['total_audio_duration'] += audio_duration
-        self.processing_stats['total_processing_time'] += processing_time
+    def _segment_audio(self, audio_array: np.ndarray, sample_rate: int) -> List[Tuple[np.ndarray, float, float]]:
+        """Segment audio into chunks with timing information"""
+        chunk_samples = int(self.chunk_duration * sample_rate)
+        chunks = []
+        
+        for i in range(0, len(audio_array), chunk_samples):
+            start_sample = i
+            end_sample = min(i + chunk_samples, len(audio_array))
+            
+            # Extract chunk
+            chunk = audio_array[start_sample:end_sample]
+            
+            # Calculate timing
+            start_time = start_sample / sample_rate
+            end_time = end_sample / sample_rate
+            
+            chunks.append((chunk, start_time, end_time))
+        
+        logger.info(f"📊 Audio segmented into {len(chunks)} chunks of ~{self.chunk_duration}s each")
+        return chunks
     
-    def _cleanup_memory(self):
-        """Clean up memory and perform garbage collection"""
+    def preprocess_audio(self, audio_bytes: bytes) -> Tuple[np.ndarray, int]:
+        """Preprocess audio data for transcription"""
         try:
-            # Clear CUDA cache if using GPU
-            if self.device == "cuda" and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # Load audio using librosa
+            audio_array, sample_rate = librosa.load(io.BytesIO(audio_bytes), sr=16000)
             
-            # Force garbage collection
-            gc.collect()
+            # Convert to mono if stereo
+            if len(audio_array.shape) > 1:
+                audio_array = np.mean(audio_array, axis=1)
             
-            # Log memory usage
-            current_memory = self._get_memory_usage()
-            logger.info(f"🧹 Memory cleanup completed. Current usage: {current_memory:.2f}GB")
+            # Normalize audio
+            if np.max(np.abs(audio_array)) > 0:
+                audio_array = audio_array / np.max(np.abs(audio_array))
+            
+            logger.info(f"✅ Audio preprocessed: {len(audio_array)} samples, {sample_rate}Hz")
+            return audio_array, sample_rate
             
         except Exception as e:
-            logger.warning(f"⚠️ Memory cleanup failed: {e}")
+            logger.error(f"❌ Audio preprocessing failed: {e}")
+            raise
     
-    def get_timestamped_transcript(self, result: TranscriptionResult, format: str = "youtube") -> str:
+    def format_timed_transcript(self, result: TranscriptionResult, format_type: str = "plain") -> str:
         """
-        Get transcript in various timestamped formats.
+        Format transcript with timing information.
         
         Args:
             result: TranscriptionResult object
-            format: Output format ("youtube", "srt", "vtt", "plain")
+            format_type: 'plain', 'srt', 'vtt', or 'timestamps'
             
         Returns:
             Formatted transcript string
         """
-        if format == "youtube":
-            return self._format_youtube_style(result)
-        elif format == "srt":
+        if format_type == "srt":
             return self._format_srt(result)
-        elif format == "vtt":
+        elif format_type == "vtt":
             return self._format_vtt(result)
-        elif format == "plain":
+        elif format_type == "timestamps":
             return self._format_plain_timestamps(result)
         else:
-            logger.warning(f"⚠️ Unknown format '{format}', using YouTube style")
-            return self._format_youtube_style(result)
+            return self._format_plain(result)
     
-    def _format_youtube_style(self, result: TranscriptionResult) -> str:
-        """Format transcript in YouTube-style with timestamps"""
+    def _format_plain(self, result: TranscriptionResult) -> str:
+        """Format transcript as plain text with timestamps"""
         lines = []
         for chunk in result.chunks:
             timestamp = self._format_timestamp(chunk.start_time)
@@ -514,37 +401,15 @@ class TranscriptionPipeline:
         """Validate if language is supported."""
         return language in self.language_codes
     
-    def get_performance_stats(self) -> Dict:
-        """Get performance statistics"""
-        return {
-            'total_files_processed': self.processing_stats['total_files_processed'],
-            'total_audio_duration': self.processing_stats['total_audio_duration'],
-            'total_processing_time': self.processing_stats['total_processing_time'],
-            'average_processing_speed': (
-                self.processing_stats['total_audio_duration'] / 
-                max(self.processing_stats['total_processing_time'], 0.001)
-            ),
-            'memory_usage_samples': self.processing_stats['memory_usage_samples'][-10:],  # Last 10 samples
-            'model_info': {
-                'name': self.model_name,
-                'device': self.device,
-                'chunk_duration': self.chunk_duration,
-                'max_memory_gb': self.max_memory_gb
-            }
-        }
-    
-    def optimize_for_production(self, target_memory_gb: float = 2.0, target_chunk_duration: float = 15.0):
-        """Optimize pipeline settings for production use"""
-        self.max_memory_gb = target_memory_gb
-        self.max_memory_bytes = target_memory_gb * 1024 * 1024 * 1024
-        self.chunk_duration = target_chunk_duration
-        
-        logger.info(f"⚙️ Pipeline optimized for production:")
-        logger.info(f"   Max memory: {target_memory_gb}GB")
-        logger.info(f"   Chunk duration: {target_chunk_duration}s")
-        
-        # Force memory cleanup
-        self._cleanup_memory()
+    def cleanup_memory(self):
+        """Clean up memory and GPU cache"""
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            logger.info("🧹 Memory cleanup completed")
+        except Exception as e:
+            logger.warning(f"⚠️ Memory cleanup failed: {e}")
 
-# Global instance
+# Global instance for backward compatibility
 transcription_pipeline = TranscriptionPipeline()
