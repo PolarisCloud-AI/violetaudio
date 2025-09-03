@@ -1,16 +1,56 @@
-# Enhanced Proxy Server
+# Violet Subnet - Audio Processing Network
 
-A high-performance proxy server for Bittensor audio processing subnet with Firebase Cloud Storage integration.
+Welcome to **Violet**, a cutting-edge Bittensor subnet dedicated to decentralized audio processing and AI-powered speech technologies. Our network leverages the power of distributed computing to provide high-quality transcription, text-to-speech synthesis, and audio analysis services.
 
-## 🚀 Features
+## 🌟 Overview
 
-- **Firebase Cloud Storage Integration** - All files stored in cloud (no local storage)
-- **Comprehensive API Endpoints** - Transcription, video processing, document translation, TTS
-- **Docker Containerization** - Easy deployment and scaling
-- **Health Monitoring** - Built-in health checks and monitoring
-- **Automatic Task Distribution** - Smart task assignment to miners
-- **Real-time Processing** - Async processing with response buffering
+Violet subnet enables a decentralized ecosystem where miners provide computational power for audio processing tasks while validators ensure quality and distribute rewards. The network integrates with a hosted proxy server for seamless task management and real-time processing.
+
+### Key Features
+- **Decentralized Audio Processing** - Distributed transcription, TTS, and audio analysis
+- **Quality Assurance** - Multi-validator consensus for reliable results
+- **Real-time Processing** - Low-latency audio processing with response buffering
+- **Scalable Architecture** - Cloud-based storage and task distribution
+- **Performance Monitoring** - Comprehensive metrics and analytics
+
+## 💻 System Requirements
+
+### Operating System
+- **Linux** (Ubuntu 20.04+ recommended)
+- **macOS** (10.15+)
+
+### Hardware Requirements
+
+#### For Miners
+- **RAM**: 12 GB minimum
+- **Storage**: 500 GB SSD
+- **GPU**: NVIDIA GPU with 12 GB VRAM minimum
+- **Network**: Stable internet connection (100+ Mbps)
+
+#### For Validators
+- **RAM**: 12 GB minimum
+- **Storage**: 500 GB SSD
+- **GPU**: NVIDIA GPU with 12 GB VRAM minimum
+- **Network**: Stable internet connection (100+ Mbps)
+
+### Software Dependencies
+- Python 3.12+
+- CUDA 11.8+ (for GPU acceleration)
+- Docker (for containerized deployment)
+- Firebase project with Cloud Storage enabled
+- Firebase service account credentials
+- Bittensor CLI (`pip install bittensor-cli`)
+
+## 🚀 Network Features
+
+- **Decentralized Audio Processing** - Distributed transcription, TTS, and audio analysis across the network
+- **Multi-Validator Consensus** - Quality assurance through multiple validator evaluation
+- **Real-time Task Distribution** - Smart task assignment to available miners
+- **Performance Monitoring** - Comprehensive metrics and analytics tracking
+- **Cloud Storage Integration** - Firebase Cloud Storage for scalable file management
 - **Weights & Biases Integration** - Performance monitoring and logging
+- **Automatic Load Balancing** - Intelligent distribution of computational load
+- **Quality Scoring** - Fair evaluation and reward distribution system
 
 ## 📋 Prerequisites
 
@@ -18,50 +58,309 @@ A high-performance proxy server for Bittensor audio processing subnet with Fireb
 - Docker (for containerized deployment)
 - Firebase project with Cloud Storage enabled
 - Firebase service account credentials
+- Bittensor CLI (`pip install bittensor-cli`)
 
-## 🛠️ Installation
+## 🏗️ Bittensor Network Setup
 
-### Local Development
+### Step 1: Create Wallets
+
+Create a coldkey and hotkey for your subnet wallet:
+
+```bash
+# Install bittensor CLI
+pip install bittensor-cli
+
+# Create a coldkey for the validator/miner
+btcli wallet new_coldkey --wallet.name <your_wallet_name>
+
+# Create a hotkey for the validator/miner
+btcli wallet new_hotkey --wallet.name <your_wallet_name> --wallet.hotkey default
+```
+
+### Step 2: Register on the Subnet
+
+Register as a miner or validator on the subnet:
+
+**Mainnet (NetUID 49):**
+```bash
+btcli subnet register --netuid 49 --subtensor.network finney --wallet.name <your_wallet_name> --wallet.hotkey default
+```
+
+**Testnet (NetUID 424):**
+```bash
+btcli subnet register --netuid 424 --subtensor.network test --wallet.name <your_wallet_name> --wallet.hotkey default
+```
+
+**Note:** Registration requires 0.005 TAO for mainnet or test tokens for testnet.
+
+### Step 3: Clone and Install Violet Repository
+
+Clone the official Violet repository and install the dependencies:
+
+```bash
+# Clone the Violet repository
+git clone https://github.com/hivetrainai/violet.git
+cd violet
+
+# Install the Violet package in development mode
+pip install -e .
+
+# Install additional requirements
+pip install -r requirements.txt
+
+# Return to the main directory
+cd ..
+```
+
+### Step 4: Run the Miner
+
+Start your miner node:
+
+**Mainnet:**
+```bash
+python neurons/miner.py \
+  --netuid 49 \
+  --subtensor.network finney \
+  --wallet.name <your_wallet_name> \
+  --wallet.hotkey <your_hotkey> \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port <PORT> \
+  --axon.external_ip <YOUR_PUBLIC_IP> \
+  --axon.external_port <PORT>
+```
+
+**Testnet:**
+```bash
+python neurons/miner.py \
+  --netuid 424 \
+  --subtensor.network test \
+  --wallet.name <your_wallet_name> \
+  --wallet.hotkey <your_hotkey> \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port <PORT> \
+  --axon.external_ip <YOUR_PUBLIC_IP> \
+  --axon.external_port <PORT>
+```
+
+### Step 5: Run the Validator
+
+Start your validator node:
+
+**Mainnet:**
+```bash
+python neurons/validator.py \
+  --netuid 49 \
+  --subtensor.network finney \
+  --wallet.name <your_wallet_name> \
+  --wallet.hotkey <your_hotkey> \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port <PORT> \
+  --axon.external_ip <YOUR_PUBLIC_IP> \
+  --axon.external_port <PORT>
+```
+
+**Testnet:**
+```bash
+python neurons/validator.py \
+  --netuid 424 \
+  --subtensor.network test \
+  --wallet.name <your_wallet_name> \
+  --wallet.hotkey <your_hotkey> \
+  --logging.debug \
+  --axon.ip 0.0.0.0 \
+  --axon.port <PORT> \
+  --axon.external_ip <YOUR_PUBLIC_IP> \
+  --axon.external_port <PORT>
+```
+
+### Network Configuration Summary
+
+| Network | NetUID | Network Name | Registration Cost |
+|---------|--------|--------------|-------------------|
+| Mainnet | 49     | finney       | 0.005 TAO         |
+| Testnet | 424    | test         | 0.005 test tokens |
+
+### Proxy Server Integration
+
+Both miner and validator are configured to use the hosted proxy server at `https://violet-proxy.onrender.com`. You can override this using environment variables:
+
+```bash
+# Override proxy server URL
+export PROXY_SERVER_URL=https://your-custom-proxy.com
+
+# Or use command line argument
+python neurons/validator.py --proxy_server_url https://your-custom-proxy.com
+```
+
+## 🏗️ System Architecture
+
+### Network Overview
+
+Violet subnet operates as a decentralized network of miners and validators, coordinated through a centralized proxy server for task distribution and result aggregation.
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   User Request  │    │  Proxy Server   │    │  Bittensor      │
+│                 │    │                 │    │  Network        │
+│ • Audio Files   │───▶│ • Task Queue    │───▶│ • Miners        │
+│ • Text Input    │    │ • Distribution  │    │ • Validators    │
+│ • Processing    │    │ • Aggregation   │    │ • Consensus     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │  Cloud Storage  │
+                       │                 │
+                       │ • Firebase      │
+                       │ • File Metadata │
+                       │ • Results Cache │
+                       └─────────────────┘
+```
+
+### Component Architecture
+
+#### 1. **Proxy Server** (`https://violet-proxy.onrender.com`)
+- **Task Distribution**: Routes tasks to available miners
+- **Response Aggregation**: Collects and buffers miner responses
+- **Quality Control**: Validates responses before final delivery
+- **Load Balancing**: Distributes computational load across miners
+
+#### 2. **Miners** (Computational Nodes)
+- **Audio Processing**: Transcription, TTS, and audio analysis
+- **Task Execution**: Processes assigned tasks with AI models
+- **Response Submission**: Sends results back to proxy server
+- **Performance Monitoring**: Tracks processing times and accuracy
+
+#### 3. **Validators** (Quality Assurance)
+- **Response Evaluation**: Assesses miner response quality
+- **Consensus Building**: Multi-validator agreement on results
+- **Reward Distribution**: Calculates and distributes TAO rewards
+- **Network Health**: Monitors miner performance and availability
+
+#### 4. **Cloud Infrastructure**
+- **Firebase Cloud Storage**: Scalable file storage and retrieval
+- **Firestore Database**: Task metadata and result tracking
+- **Weights & Biases**: Performance monitoring and analytics
+
+### Data Flow
+
+```
+1. User Upload → Proxy Server
+   ├── File stored in Firebase Cloud Storage
+   ├── Task created in Firestore
+   └── Task queued for distribution
+
+2. Task Distribution → Miners
+   ├── Proxy server assigns tasks to available miners
+   ├── Miners download files from Cloud Storage
+   └── Miners process tasks using AI models
+
+3. Response Collection → Proxy Server
+   ├── Miners upload results to Cloud Storage
+   ├── Results aggregated by proxy server
+   └── Quality validation performed
+
+4. Validator Evaluation → Consensus
+   ├── Validators evaluate miner responses
+   ├── Multi-validator consensus reached
+   ├── Rewards calculated and distributed
+   └── Results delivered to user
+
+5. Performance Tracking → Analytics
+   ├── Metrics logged to Weights & Biases
+   ├── Network health monitored
+   └── Performance optimizations applied
+```
+
+### Security & Reliability
+
+- **Multi-Validator Consensus**: Ensures result accuracy through multiple validators
+- **Duplicate Protection**: Prevents double-processing of tasks
+- **Response Buffering**: Handles network latency and miner failures
+- **Quality Scoring**: Fair evaluation system for miner rewards
+- **Load Balancing**: Prevents network overload and ensures fair distribution
+
+## 🛠️ Installation & Setup
+
+### Prerequisites Installation
+
+```bash
+# Install Python dependencies
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install transformers librosa soundfile numpy fastapi uvicorn
+
+# Install Bittensor
+pip install bittensor
+
+# Install Bittensor CLI
+pip install bittensor-cli
+
+# Install additional dependencies
+pip install firebase-admin google-cloud-storage wandb
+```
+
+### Clone Repository
 
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd proxy_server
+cd bittensor-subnet-template
 
-# Install dependencies
+# Install project dependencies
 pip install -r requirements.txt
-
-# Set up Firebase credentials
-# Place your Firebase service account JSON file at db/violet.json
-
-# Run the server
-python main.py
 ```
 
-### Docker Deployment
+### Environment Setup
 
 ```bash
-# Using Docker Compose (Recommended)
-docker-compose up --build
-
-# Or using Docker directly
-docker build -t proxy-server .
-docker run -p 8000:8000 -v $(pwd)/db:/app/db:ro proxy-server
+# Set up environment variables
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+export CUDA_VISIBLE_DEVICES=0  # Use first GPU
+export WANDB_MODE=online       # Enable Weights & Biases logging
 ```
 
 ## 🔧 Configuration
 
-### Firebase Setup
+### GPU Configuration
 
-1. Create a Firebase project
-2. Enable Cloud Storage
-3. Create a service account and download the JSON key
-4. Place the JSON file at `db/violet.json`
+Ensure your GPU is properly configured for CUDA:
 
-### Environment Variables
+```bash
+# Check CUDA installation
+nvidia-smi
 
-- `PYTHONPATH=/app` - Python path (set automatically in Docker)
-- `PYTHONUNBUFFERED=1` - Unbuffered Python output
+# Verify PyTorch CUDA support
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import torch; print(f'CUDA version: {torch.version.cuda}')"
+```
+
+### Network Configuration
+
+Configure your network settings for optimal performance:
+
+```bash
+# Set network parameters
+export BT_NETUID=49          # Mainnet subnet ID
+export BT_NETWORK=finney     # Mainnet network
+export BT_WALLET_NAME=your_wallet_name
+export BT_WALLET_HOTKEY=default
+
+# For testnet
+export BT_NETUID=424         # Testnet subnet ID
+export BT_NETWORK=test       # Testnet network
+```
+
+### Proxy Server Integration
+
+The subnet automatically connects to the hosted proxy server. Configuration is handled automatically, but you can override if needed:
+
+```bash
+# Override proxy server URL (optional)
+export PROXY_SERVER_URL=https://violet-proxy.onrender.com
+```
 
 ## 📡 API Endpoints
 
