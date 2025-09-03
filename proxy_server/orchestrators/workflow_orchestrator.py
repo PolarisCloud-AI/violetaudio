@@ -7,9 +7,9 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from firebase_admin import firestore
-from ..managers.task_manager import TaskManager
-from ..managers.miner_response_handler import MinerResponseHandler
-from ..database.enhanced_schema import TaskStatus, TaskPriority, COLLECTIONS, DatabaseOperations
+from managers.task_manager import TaskManager
+from managers.miner_response_handler import MinerResponseHandler
+from database.enhanced_schema import TaskStatus, TaskPriority, COLLECTIONS, DatabaseOperations
 
 class WorkflowOrchestrator:
     def __init__(self, db, task_manager=None):

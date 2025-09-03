@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from firebase_admin import firestore
-from ..database.enhanced_schema import TaskStatus
+from database.enhanced_schema import TaskStatus
 
 class ValidatorIntegrationAPI:
     def __init__(self, db):
@@ -80,61 +80,36 @@ class ValidatorIntegrationAPI:
                                         import os
                                         import glob
                                         
-                                        # Convert relative path to absolute path
-                                        if local_path.startswith('/'):
-                                            # Remove leading slash to make it relative to project root
-                                            local_path = local_path[1:]
-                                        
-                                        # Construct absolute path from project root
-                                        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                                        abs_path = os.path.join(project_root, local_path)
-                                        
-                                        print(f"         🔧 Path conversion:")
-                                        print(f"            Original: {file_data.get('local_path', '')}")
-                                        print(f"            Project root: {project_root}")
-                                        print(f"            Absolute path: {abs_path}")
-                                        
-                                        # Get the directory from the absolute path
-                                        base_dir = os.path.dirname(abs_path)
-                                        if os.path.exists(base_dir):
-                                            print(f"         ✅ Base directory exists: {base_dir}")
+                                        # Get file content from Firebase Cloud Storage instead of local storage
+                                        try:
+                                            from proxy_server.managers.file_manager import FileManager
+                                            from firebase_admin import firestore
                                             
-                                            # Look for files that start with the file_id
-                                            pattern = os.path.join(base_dir, f"{file_id}*")
-                                            print(f"         🔍 Looking for pattern: {pattern}")
+                                            # Use existing Firebase app and get Firestore client
+                                            db = firestore.client()
+                                            file_manager = FileManager(db)
                                             
-                                            matching_files = glob.glob(pattern)
-                                            print(f"         📊 Found {len(matching_files)} matching files")
+                                            # Get file content from Firebase Cloud Storage
+                                            file_content = await file_manager.download_file(file_id)
                                             
-                                            if matching_files:
-                                                actual_file_path = matching_files[0]
-                                                print(f"         🔍 Found actual file: {actual_file_path}")
-                                                
-                                                # Read the file content
-                                                try:
-                                                    with open(actual_file_path, 'rb') as f:
-                                                        raw_content = f.read()
-                                                    
-                                                    # Convert binary data to base64 string for JSON serialization
-                                                    import base64
-                                                    if isinstance(raw_content, bytes):
-                                                        # For binary files (audio, etc.), convert to base64
-                                                        base64_content = base64.b64encode(raw_content).decode('utf-8')
-                                                        task_data['input_data'] = base64_content
-                                                        print(f"         ✅ File content read from disk and converted to base64 ({len(raw_content)} bytes -> {len(base64_content)} chars)")
-                                                    else:
-                                                        # For text files, use as-is
-                                                        task_data['input_data'] = raw_content
-                                                        print(f"         ✅ File content read from disk ({len(str(raw_content))} chars)")
-                                                        
-                                                except Exception as read_error:
-                                                    print(f"         ❌ Failed to read file: {read_error}")
-                                                    task_data['input_data'] = None
+                                            if file_content:
+                                                # Convert binary data to base64 string for JSON serialization
+                                                import base64
+                                                if isinstance(file_content, bytes):
+                                                    # For binary files (audio, etc.), convert to base64
+                                                    base64_content = base64.b64encode(file_content).decode('utf-8')
+                                                    task_data['input_data'] = base64_content
+                                                    print(f"         ✅ File content retrieved from Firebase Cloud Storage and converted to base64 ({len(file_content)} bytes -> {len(base64_content)} chars)")
+                                                else:
+                                                    # For text files, use as-is
+                                                    task_data['input_data'] = file_content
+                                                    print(f"         ✅ File content retrieved from Firebase Cloud Storage ({len(str(file_content))} chars)")
                                             else:
-                                                print(f"         ❌ No matching files found for pattern: {pattern}")
+                                                print(f"         ❌ File content not found in Firebase Cloud Storage")
                                                 task_data['input_data'] = None
-                                        else:
-                                            print(f"         ❌ Base directory doesn't exist: {base_dir}")
+                                                
+                                        except Exception as read_error:
+                                            print(f"         ❌ Failed to retrieve file from Firebase Cloud Storage: {read_error}")
                                             task_data['input_data'] = None
                                     else:
                                         print(f"         ❌ No local_path in file metadata")

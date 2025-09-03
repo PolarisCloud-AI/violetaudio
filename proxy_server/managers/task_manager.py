@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from firebase_admin import firestore
-from proxy_server.database.enhanced_schema import TaskStatus, TaskPriority
+from database.enhanced_schema import TaskStatus, TaskPriority
 
 class TaskManager:
     def __init__(self, db):

@@ -17,7 +17,9 @@ services:
     restart: unless-stopped
 
   proxy-server:
-    build: .
+    build:
+      context: ..
+      dockerfile: proxy_server/Dockerfile
     container_name: bittensor_proxy_server
     ports:
       - "8000:8000"

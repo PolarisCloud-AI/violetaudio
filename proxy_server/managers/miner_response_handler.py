@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from firebase_admin import firestore
-from ..database.enhanced_schema import TaskStatus, COLLECTIONS
+from database.enhanced_schema import TaskStatus, COLLECTIONS
 
 class MinerResponseHandler:
     def __init__(self, db, task_manager=None):

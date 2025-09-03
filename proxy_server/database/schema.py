@@ -243,6 +243,7 @@ class DatabaseManager:
             
             # Get Firestore client
             self.db = firestore.client()
+            
             self.initialized = True
             
             print("✅ Database initialized successfully")
