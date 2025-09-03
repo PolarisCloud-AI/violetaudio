@@ -202,22 +202,93 @@ python neurons/validator.py --proxy_server_url https://your-custom-proxy.com
 Violet subnet operates as a decentralized network of miners and validators, coordinated through a centralized proxy server for task distribution and result aggregation.
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Request  │    │  Proxy Server   │    │  Bittensor      │
-│                 │    │                 │    │  Network        │
-│ • Audio Files   │───▶│ • Task Queue    │───▶│ • Miners        │
-│ • Text Input    │    │ • Distribution  │    │ • Validators    │
-│ • Processing    │    │ • Aggregation   │    │ • Consensus     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │  Cloud Storage  │
-                       │                 │
-                       │ • Firebase      │
-                       │ • File Metadata │
-                       │ • Results Cache │
-                       └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                    VIOLET SUBNET ARCHITECTURE                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   USER CLIENT   │    │  PROXY SERVER    │    │  BITTENSOR      │    │  CLOUD STORAGE   │
+│                 │    │                 │    │  NETWORK        │    │                 │
+│ • Web App       │───▶│ • Task Queue    │───▶│ • Miners        │───▶│ • Firebase       │
+│ • API Client    │    │ • Distribution   │    │ • Validators    │    │ • Cloud Storage  │
+│ • Mobile App    │    │ • Aggregation    │    │ • Consensus     │    │ • Firestore DB   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │                        │                        │
+                                ▼                        ▼                        ▼
+                       ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+                       │  TASK MANAGER   │    │  AI PROCESSING  │    │  FILE MANAGER   │
+                       │                 │    │                 │    │                 │
+                       │ • Task Creation │    │ • Transcription │    │ • Upload/Download│
+                       │ • Assignment    │    │ • TTS Synthesis │    │ • Metadata Mgmt  │
+                       │ • Status Track  │    │ • Audio Analysis│    │ • Cache Control  │
+                       └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │                        │                        │
+                                ▼                        ▼                        ▼
+                       ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+                       │  VALIDATOR      │    │  MINER NODES    │    │  MONITORING     │
+                       │  CONSENSUS      │    │                 │    │                 │
+                       │                 │    │ • GPU Processing│    │ • Weights & Biases│
+                       │ • Quality Check │    │ • Model Loading │    │ • Performance    │
+                       │ • Reward Calc   │    │ • Response Gen  │    │ • Analytics      │
+                       │ • Network Health│    │ • Result Submit │    │ • Logging        │
+                       └─────────────────┘    └─────────────────┘    └─────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                    DATA FLOW DIAGRAM                                │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   1. UPLOAD │  │  2. QUEUE   │  │  3. ASSIGN  │  │  4. PROCESS │  │  5. EVALUATE│
+│             │  │             │  │             │  │             │  │             │
+│ User uploads│──▶│ Task created │──▶│ Distributed │──▶│ Miners     │──▶│ Validators  │
+│ audio/text  │  │ in Firestore│  │ to miners  │  │ process    │  │ evaluate    │
+│ to proxy    │  │ & queued    │  │ based on   │  │ with AI    │  │ quality &   │
+│ server      │  │ for dist.   │  │ availability│  │ models     │  │ distribute  │
+└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+       │                │                │                │                │
+       ▼                ▼                ▼                ▼                ▼
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│ File stored │  │ Task status │  │ Load       │  │ Results     │  │ Rewards     │
+│ in Firebase │  │ tracked in  │  │ balanced   │  │ uploaded to │  │ calculated  │
+│ Cloud       │  │ real-time   │  │ across     │  │ Cloud       │  │ & distributed│
+│ Storage     │  │             │  │ network    │  │ Storage     │  │ to miners   │
+└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                    COMPONENT DETAILS                                │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  PROXY SERVER (https://violet-proxy.onrender.com)                                   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ • Task Distribution Engine    │ • Response Aggregation    │ • Quality Control      │
+│ • Load Balancing Algorithm     │ • Buffer Management       │ • Duplicate Protection │
+│ • Real-time Status Tracking    │ • Performance Monitoring  │ • Error Handling       │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  MINER NODES (Computational Power)                                                 │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ • GPU-Accelerated Processing   │ • AI Model Management     │ • Response Generation  │
+│ • Task Execution Engine        │ • Memory Optimization    │ • Result Submission   │
+│ • Performance Tracking         │ • Error Recovery          │ • Health Monitoring   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  VALIDATOR NODES (Quality Assurance)                                               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ • Multi-Validator Consensus     │ • Quality Scoring         │ • Reward Calculation   │
+│ • Response Evaluation           │ • Performance Metrics     │ • Network Health Check │
+│ • Fairness Assurance            │ • Load Distribution       │ • Consensus Building   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  CLOUD INFRASTRUCTURE (Scalable Storage & Analytics)                               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ • Firebase Cloud Storage       │ • Firestore Database      │ • Weights & Biases     │
+│ • File Metadata Management     │ • Task Status Tracking    │ • Performance Analytics│
+│ • Scalable File Operations     │ • Real-time Updates       │ • Network Monitoring   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Architecture
