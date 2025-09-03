@@ -120,7 +120,7 @@ class DatabaseInitializer:
             'file_name': "LJ037-0171.wav",
             'file_type': "audio/wav",
             'file_size': 334496,  # Actual file size
-            'local_path': "proxy_server/local_storage/user_audio/7290cb3e-3c5c-4b53-8e49-c182e3357f5d_LJ037-0171.wav",
+            'local_path': "firestore/7290cb3e-3c5c-4b53-8e49-c182e3357f5d_LJ037-0171.wav",
             'file_url': "/api/v1/files/7290cb3e-3c5c-4b53-8e49-c182e3357f5d",
             'content_type': "audio/wav",
             'checksum': "abc123def456",

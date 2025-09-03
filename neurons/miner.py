@@ -56,7 +56,7 @@ class Miner(BaseMinerNeuron):
         super(Miner, self).__init__(config=config)
         
         # Miner will query proxy server for tasks instead of running its own API server
-        self.proxy_server_url = "http://localhost:8000"  # Proxy server URL
+        self.proxy_server_url = "https://violet-proxy.onrender.com"  # Hosted proxy server URL
         self.last_task_query = 0
         self.task_query_interval = 10  # Query every 10 seconds
         
@@ -1457,35 +1457,88 @@ Report generated automatically by Bittensor Miner
             import uuid
             audio_filename = f"{uuid.uuid4().hex[:8]}.wav"
             
-            # Save audio to local storage
-            audio_path = f"proxy_server/local_storage/tts_audio/{audio_filename}"
-            os.makedirs(os.path.dirname(audio_path), exist_ok=True)
-            
-            with open(audio_path, "wb") as f:
-                f.write(audio_data)
-            
-            bt.logging.info(f"✅ Audio file saved: {audio_path}")
-            bt.logging.info(f"   File size: {len(audio_data)} bytes")
-            
-            return {
-                "audio_file": {
-                    "filename": audio_filename,
-                    "local_path": audio_path,
-                    "file_size": len(audio_data),
-                    "file_type": "audio/wav"
-                },
-                "processing_time": processing_time,
-                "text_length": len(text),
-                "source_language": source_language,
-                "detected_language": detected_language,
-                "language_confidence": language_confidence,
-                "processing_language": processing_language,
-                "word_count": len(text.split()),
-                "audio_duration": 0.0,  # Will be calculated by validator
-                "sample_rate": 22050,   # Default, will be verified by validator
-                "bit_depth": 16,        # Default, will be verified by validator
-                "channels": 1           # Default, will be verified by validator
-            }
+            # Store audio in Firebase Cloud Storage instead of local storage
+            try:
+                # Import Firebase storage manager
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+                
+                from proxy_server.managers.file_manager import FileManager
+                from proxy_server.database.schema import DatabaseManager
+                
+                # Initialize database and file manager
+                db_manager = DatabaseManager("proxy_server/db/violet.json")
+                db_manager.initialize()
+                file_manager = FileManager(db_manager.get_db())
+                
+                # Upload audio to Firebase Cloud Storage
+                file_id = await file_manager.upload_file(
+                    audio_data,
+                    audio_filename,
+                    "audio/wav",
+                    file_type="tts"
+                )
+                
+                # Get file metadata
+                file_metadata = await file_manager.get_file_metadata(file_id)
+                
+                bt.logging.info(f"✅ Audio file uploaded to Firebase Cloud Storage: {file_id}")
+                bt.logging.info(f"   File size: {len(audio_data)} bytes")
+                
+                return {
+                    "audio_file": {
+                        "file_id": file_id,
+                        "filename": audio_filename,
+                        "file_size": len(audio_data),
+                        "file_type": "audio/wav",
+                        "cloud_path": file_metadata.get('cloud_path', f"tts_audio/{file_id}") if file_metadata else f"tts_audio/{file_id}",
+                        "file_url": f"/api/v1/tts/audio/{file_id}"
+                    },
+                    "processing_time": processing_time,
+                    "text_length": len(text),
+                    "source_language": source_language,
+                    "detected_language": detected_language,
+                    "language_confidence": language_confidence,
+                    "processing_language": processing_language,
+                    "word_count": len(text.split()),
+                    "audio_duration": 0.0,  # Will be calculated by validator
+                    "sample_rate": 22050,   # Default, will be verified by validator
+                    "bit_depth": 16,        # Default, will be verified by validator
+                    "channels": 1           # Default, will be verified by validator
+                }
+                
+            except Exception as storage_error:
+                bt.logging.error(f"❌ Failed to upload to Firebase Cloud Storage: {storage_error}")
+                # Fallback to local storage if Firebase fails
+                audio_path = f"proxy_server/local_storage/tts_audio/{audio_filename}"
+                os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+                
+                with open(audio_path, "wb") as f:
+                    f.write(audio_data)
+                
+                bt.logging.info(f"✅ Audio file saved locally (fallback): {audio_path}")
+                bt.logging.info(f"   File size: {len(audio_data)} bytes")
+                
+                return {
+                    "audio_file": {
+                        "filename": audio_filename,
+                        "local_path": audio_path,
+                        "file_size": len(audio_data),
+                        "file_type": "audio/wav"
+                    },
+                    "processing_time": processing_time,
+                    "text_length": len(text),
+                    "source_language": source_language,
+                    "detected_language": detected_language,
+                    "language_confidence": language_confidence,
+                    "processing_language": processing_language,
+                    "word_count": len(text.split()),
+                    "audio_duration": 0.0,  # Will be calculated by validator
+                    "sample_rate": 22050,   # Default, will be verified by validator
+                    "bit_depth": 16,        # Default, will be verified by validator
+                    "channels": 1           # Default, will be verified by validator
+                }
             
         except Exception as e:
             bt.logging.error(f"❌ Error processing TTS task: {e}")
@@ -2189,14 +2242,47 @@ Report generated automatically by Bittensor Miner
                 bt.logging.error(f"❌ No audio file data in TTS result for task {task_id}")
                 return False
             
-            # Read the audio file
-            audio_path = audio_file.get("local_path")
-            if not os.path.exists(audio_path):
-                bt.logging.error(f"❌ Audio file not found at {audio_path}")
-                return False
+            # Get audio content from Firebase Cloud Storage or local path
+            audio_content = None
+            file_id = audio_file.get("file_id")
             
-            with open(audio_path, "rb") as f:
-                audio_content = f.read()
+            if file_id:
+                # Try to get from Firebase Cloud Storage first
+                try:
+                    import sys
+                    import os
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+                    
+                    from proxy_server.managers.file_manager import FileManager
+                    from proxy_server.database.schema import DatabaseManager
+                    
+                    # Initialize database and file manager
+                    db_manager = DatabaseManager("proxy_server/db/violet.json")
+                    db_manager.initialize()
+                    file_manager = FileManager(db_manager.get_db())
+                    
+                    # Download from Firebase Cloud Storage
+                    audio_content = await file_manager.download_file(file_id)
+                    
+                    if audio_content:
+                        bt.logging.info(f"✅ Retrieved audio from Firebase Cloud Storage: {file_id}")
+                    else:
+                        bt.logging.warning(f"⚠️ Audio not found in Firebase Cloud Storage: {file_id}")
+                        
+                except Exception as storage_error:
+                    bt.logging.warning(f"⚠️ Failed to retrieve from Firebase Cloud Storage: {storage_error}")
+            
+            # Fallback to local path if Firebase failed or not available
+            if not audio_content:
+                audio_path = audio_file.get("local_path")
+                if not audio_path or not os.path.exists(audio_path):
+                    bt.logging.error(f"❌ Audio file not found at {audio_path}")
+                    return False
+                
+                with open(audio_path, "rb") as f:
+                    audio_content = f.read()
+                
+                bt.logging.info(f"✅ Retrieved audio from local storage: {audio_path}")
             
             bt.logging.info(f"📤 Submitting TTS result to proxy server for task {task_id}")
             bt.logging.info(f"   Callback URL: {callback_url}")

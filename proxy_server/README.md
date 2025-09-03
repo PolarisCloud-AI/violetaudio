@@ -14,6 +14,68 @@ A FastAPI-based proxy server that provides REST API endpoints for audio processi
 - **Health Monitoring** and statistics
 - **Input Validation** and formatting for each service type
 
+## 🌍 Supported Languages
+
+The proxy server supports multiple languages across different endpoints based on the underlying AI models:
+
+### 📝 Transcription Endpoints
+**Supported Languages**: English (en), Spanish (es), French (fr), German (de), Italian (it), Portuguese (pt), Russian (ru), Japanese (ja), Korean (ko), Chinese (zh), Arabic (ar), Hindi (hi), Dutch (nl), Polish (pl), Swedish (sv), Turkish (tr)
+
+**Endpoints**:
+- `/api/v1/transcription` - Audio transcription
+- `/api/v1/video-transcription` - Video transcription
+
+### 🎤 Text-to-Speech (TTS) Endpoints
+**Supported Languages**: English (en), Spanish (es), French (fr-fr), German (de), Italian (it), Portuguese (pt-br), Russian (ru), Japanese (ja), Korean (ko), Chinese (zh), Arabic (ar), Hindi (hi), Dutch (nl), Polish (pl), Swedish (sv), Turkish (tr)
+
+**Endpoints**:
+- `/api/v1/tts` - Text-to-speech synthesis
+- `/api/v1/miner/tts/upload-audio` - TTS audio upload
+
+### 📊 Summarization Endpoints
+**Supported Languages**: English (en), Spanish (es), French (fr), German (de), Italian (it), Portuguese (pt), Russian (ru), Japanese (ja), Korean (ko), Chinese (zh)
+
+**Endpoints**:
+- `/api/v1/summarization` - Text summarization
+
+### 🌐 Translation Endpoints
+**Supported Languages**: All major languages supported by the underlying translation models
+
+**Endpoints**:
+- `/api/v1/text-translation` - Text translation (requires source_language and target_language)
+- `/api/v1/document-translation` - Document translation (requires source_language and target_language)
+
+### 🔧 Language Usage Examples
+
+**Transcription**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/transcription" \
+  -F "audio_file=@audio.wav" \
+  -F "source_language=en"
+```
+
+**TTS**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -F "text=Hello world" \
+  -F "source_language=en"
+```
+
+**Translation**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/text-translation" \
+  -F "text=Hello world" \
+  -F "source_language=en" \
+  -F "target_language=es"
+```
+
+**Summarization**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/summarization" \
+  -F "text=Long text to summarize..." \
+  -F "source_language=en"
+```
+
 ## 🏗️ Architecture
 
 ```

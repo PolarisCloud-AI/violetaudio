@@ -51,7 +51,7 @@ class Validator(BaseValidatorNeuron):
     def __init__(self, config=None):
         # Initialize critical attributes BEFORE calling parent constructor
         self.proxy_tasks_processed_this_epoch = False
-        self.proxy_server_url = "http://localhost:8000"  # Proxy server URL
+        self.proxy_server_url = "https://violet-proxy.onrender.com"  # Hosted proxy server URL
         self.last_miner_status_report = 0
         self.miner_status_report_interval = 100  # Report every 100 blocks (1 epoch)
         
@@ -81,7 +81,7 @@ class Validator(BaseValidatorNeuron):
         os.makedirs("logs/validator", exist_ok=True)
 
         # Proxy server integration settings
-        self.proxy_server_url = os.getenv('PROXY_SERVER_URL', 'http://localhost:8000')
+        self.proxy_server_url = os.getenv('PROXY_SERVER_URL', 'https://violet-proxy.onrender.com')
         self.enable_proxy_integration = os.getenv('ENABLE_PROXY_INTEGRATION', 'True').lower() == 'true'
         self.proxy_check_interval = int(os.getenv('PROXY_CHECK_INTERVAL', '30'))  # seconds
         
@@ -3882,7 +3882,7 @@ if __name__ == "__main__":
     
     # Create argument parser
     parser = argparse.ArgumentParser(description="Bittensor Audio Processing Validator")
-    parser.add_argument("--proxy_server_url", type=str, default="http://localhost:8000",
+    parser.add_argument("--proxy_server_url", type=str, default="https://violet-proxy.onrender.com",
                        help="URL of the proxy server for task integration")
     parser.add_argument("--enable_proxy_integration", action="store_true", default=True,
                        help="Enable integration with proxy server")

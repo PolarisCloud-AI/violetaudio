@@ -7,13 +7,22 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from firebase_admin import firestore
-from ..database.enhanced_schema import TaskStatus, COLLECTIONS
+from database.enhanced_schema import TaskStatus, COLLECTIONS
 
 class MinerResponseHandler:
     def __init__(self, db, task_manager=None):
         self.db = db
         self.task_manager = task_manager
         self.tasks_collection = db.collection('tasks')
+        
+        # Import and initialize response aggregator
+        try:
+            from .response_aggregator import ResponseAggregator
+            self.response_aggregator = ResponseAggregator(db)
+            print("✅ Response aggregator initialized")
+        except ImportError as e:
+            print(f"⚠️ Could not import response aggregator: {e}")
+            self.response_aggregator = None
     
     async def handle_miner_response(self, task_id: str, miner_uid: int, response_data: Dict) -> bool:
         """Handle miner response for a specific task"""
@@ -116,10 +125,16 @@ class MinerResponseHandler:
                 if best_response:
                     update_data['best_response'] = best_response
             
-            # Update task document
-            task_ref.update(update_data)
+            # Use response aggregator if available, otherwise fall back to immediate update
+            if self.response_aggregator:
+                # Buffer response for batch processing
+                await self.response_aggregator.buffer_miner_response(task_id, miner_uid, response_doc)
+                print(f"✅ Miner {miner_uid} response buffered for task {task_id}")
+            else:
+                # Fallback to immediate update
+                task_ref.update(update_data)
+                print(f"✅ Miner {miner_uid} response stored immediately in task {task_id}")
             
-            print(f"✅ Miner {miner_uid} response stored in task {task_id}")
             return True
             
         except Exception as e:
